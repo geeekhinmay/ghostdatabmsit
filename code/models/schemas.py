@@ -212,3 +212,35 @@ class CaseResult(BaseModel):
     case_id: str
     deletion_status: DeletionStatus
     steps: List[AuditStep] = Field(default_factory=list)
+# ---------------------------------------------------------------------------
+# Identity & Investigation models (Member 3)
+# ---------------------------------------------------------------------------
+
+class IdentityResolution(BaseModel):
+    """Result of resolving current and historical user identifiers for a case."""
+    case_id: str
+    user_id: Optional[str] = None
+    account_ids: List[str] = Field(default_factory=list)
+    emails: List[str] = Field(default_factory=list)
+    phones: List[str] = Field(default_factory=list)
+    email_hashes: List[str] = Field(default_factory=list)
+    names: List[str] = Field(default_factory=list)
+    is_resolved: bool = True
+
+
+class InvestigationFinding(BaseModel):
+    """An individual resource state or risk discovered during investigation."""
+    system_id: str
+    resource_id: str
+    record_type: str
+    state: str
+    evidence_id: str
+    details: str = ""
+
+
+class InvestigationResult(BaseModel):
+    """Complete evidence-backed investigation findings for a case."""
+    case_id: str
+    findings: List[InvestigationFinding] = Field(default_factory=list)
+    active_data_flows: List[Dict[str, Any]] = Field(default_factory=list)
+    restore_risks: List[Dict[str, Any]] = Field(default_factory=list)
