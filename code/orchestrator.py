@@ -473,9 +473,29 @@ class Orchestrator:
         logger.info(f"Loading dataset from: {ds_dir}")
         dataset = self.load_dataset_fn(ds_dir)
 
-        requests_to_audit = dataset.requests
+        # Parse evidence files via Member 2's module (code.ingestion.parse_all_evidence)
+        try:
+            from code.ingestion import parse_all_evidence
+            logger.info("Parsing evidence via code.ingestion.parse_all_evidence...")
+            evidence_records = parse_all_evidence(ds_dir, dataset.evidence_manifest)
+            logger.info(f"Parsed {len(evidence_records)} evidence records via Member 2 module.")
+        except Exception as e:
+            logger.warning(f"parse_all_evidence notification: {e}")
+
+        all_known_requests = dict(dataset.requests_by_case_id) if hasattr(dataset, "requests_by_case_id") else dict(dataset.requests)
+        if hasattr(dataset, "sample_requests"):
+            for r in dataset.sample_requests:
+                all_known_requests[r.case_id] = r
+        if hasattr(dataset, "deletion_requests"):
+            for r in dataset.deletion_requests:
+                all_known_requests[r.case_id] = r
+
         if case_ids:
-            requests_to_audit = {cid: req for cid, req in dataset.requests.items() if cid in case_ids}
+            requests_to_audit = {cid: all_known_requests[cid] for cid in case_ids if cid in all_known_requests}
+        elif getattr(dataset, "deletion_requests", None):
+            requests_to_audit = {r.case_id: r for r in dataset.deletion_requests}
+        else:
+            requests_to_audit = all_known_requests
 
         logger.info(f"Auditing {len(requests_to_audit)} requests...")
         results: list[OutputRow] = []

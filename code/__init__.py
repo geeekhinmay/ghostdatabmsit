@@ -1,6 +1,7 @@
-"""Ghost Data deletion audit root package.
+"""Ghost Data Still Exists — deletion-audit system.
 
-Also provides compatibility fallback for Python standard library `code` module
+Top-level package for the HackerRank Orchestrate October 2026 challenge.
+Provides compatibility fallback for Python standard library `code` module
 (which is imported by pdb and debugging tools).
 """
 

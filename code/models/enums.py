@@ -1,7 +1,7 @@
-"""Shared enumeration contracts for the Ghost Data deletion audit system.
+"""Shared enumerations for the Ghost Data Still Exists deletion-audit system.
 
-Defines the exact official allowed values for phases, operations, states,
-deletion statuses, data categories, and actions.
+Owned by: Member 1 (Team Lead)
+Read by: All modules.
 """
 
 from __future__ import annotations
@@ -10,17 +10,21 @@ from enum import Enum
 
 
 class DeletionStatus(str, Enum):
-    """Case-level deletion status output."""
+    """Top-level deletion audit outcome."""
     COMPLETE = "COMPLETE"
     INCOMPLETE = "INCOMPLETE"
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
-class Phase(str, Enum):
-    """Audit workflow phase. Order is strictly FINDING -> REMEDIATION -> VERIFICATION."""
+class StepPhase(str, Enum):
+    """Allowed step phases. Order is strictly FINDING -> REMEDIATION -> VERIFICATION."""
     FINDING = "FINDING"
     REMEDIATION = "REMEDIATION"
     VERIFICATION = "VERIFICATION"
+
+
+# Alias for backwards compatibility with Member 1 modules
+Phase = StepPhase
 
 
 class FindingOperation(str, Enum):
@@ -50,22 +54,71 @@ class VerificationOperation(str, Enum):
     VERIFY_RESTORE_BLOCKED = "VERIFY_RESTORE_BLOCKED"
 
 
-class State(str, Enum):
-    """Allowed states for step resources."""
+class StepOperation(str, Enum):
+    """Combined allowed step operations across all three phases."""
+    # Findings
+    REPORT_REMAINING_RECORD = "REPORT_REMAINING_RECORD"
+    REPORT_EXPOSED_PII = "REPORT_EXPOSED_PII"
+    REPORT_ACTIVE_DATA_FLOW = "REPORT_ACTIVE_DATA_FLOW"
+    REPORT_RESTORE_RISK = "REPORT_RESTORE_RISK"
+    # Remediation
+    DISABLE_DATA_FLOW = "DISABLE_DATA_FLOW"
+    BLOCK_RESTORE = "BLOCK_RESTORE"
+    DELETE_RECORD = "DELETE_RECORD"
+    REDACT_RECORD = "REDACT_RECORD"
+    ANONYMIZE_RECORD = "ANONYMIZE_RECORD"
+    # Verification
+    VERIFY_RECORD_ABSENT = "VERIFY_RECORD_ABSENT"
+    VERIFY_RECORD_PRESENT = "VERIFY_RECORD_PRESENT"
+    VERIFY_RECORD_REDACTED = "VERIFY_RECORD_REDACTED"
+    VERIFY_RECORD_ANONYMIZED = "VERIFY_RECORD_ANONYMIZED"
+    VERIFY_DATA_FLOW_DISABLED = "VERIFY_DATA_FLOW_DISABLED"
+    VERIFY_RESTORE_BLOCKED = "VERIFY_RESTORE_BLOCKED"
+
+
+class StepState(str, Enum):
+    """Allowed step states."""
     PRESENT = "PRESENT"
     ABSENT = "ABSENT"
+    REDACTED = "REDACTED"
+    ANONYMIZED = "ANONYMIZED"
     ACTIVE = "ACTIVE"
     DISABLED = "DISABLED"
     BLOCKED = "BLOCKED"
-    REDACTED = "REDACTED"
-    ANONYMIZED = "ANONYMIZED"
+
+
+# Alias for backwards compatibility with Member 1 modules
+State = StepState
 
 
 class ReportedStatus(str, Enum):
-    """Status claimed by the upstream deletion workflow."""
+    """Status claimed by the deletion workflow."""
     COMPLETE = "COMPLETE"
     PARTIALLY_COMPLETE = "PARTIALLY_COMPLETE"
     NOT_STARTED = "NOT_STARTED"
+
+
+class RequiredAction(str, Enum):
+    """Required action from deletion_rules.csv."""
+    DELETE = "DELETE"
+    REDACT = "REDACT"
+    ANONYMIZE = "ANONYMIZE"
+    RETAIN = "RETAIN"
+
+
+class EvidenceFormat(str, Enum):
+    """Parsed evidence file format."""
+    CSV = "csv"
+    TSV = "tsv"
+    JSON = "json"
+    JSONL = "jsonl"
+    SQL = "sql"
+    LOG = "log"
+    TXT = "txt"
+    PDF = "pdf"
+    PNG = "png"
+    JPG = "jpg"
+    UNKNOWN = "unknown"
 
 
 class DataCategory(str, Enum):
@@ -87,69 +140,61 @@ class DataCategory(str, Enum):
     ACCOUNT_TOMBSTONE = "ACCOUNT_TOMBSTONE"
 
 
-class RequiredAction(str, Enum):
-    """Actions defined in deletion_rules.csv."""
-    DELETE = "DELETE"
-    REDACT = "REDACT"
-    ANONYMIZE = "ANONYMIZE"
-    RETAIN = "RETAIN"
-
-
 # Phase ordering index for deterministic sorting
-PHASE_ORDER: dict[Phase, int] = {
-    Phase.FINDING: 1,
-    Phase.REMEDIATION: 2,
-    Phase.VERIFICATION: 3,
+PHASE_ORDER: dict[StepPhase, int] = {
+    StepPhase.FINDING: 1,
+    StepPhase.REMEDIATION: 2,
+    StepPhase.VERIFICATION: 3,
 }
 
 # Official operation ordering within each phase
 OPERATION_ORDER: dict[str, int] = {
     # FINDING operations
-    FindingOperation.REPORT_REMAINING_RECORD.value: 1,
-    FindingOperation.REPORT_EXPOSED_PII.value: 2,
-    FindingOperation.REPORT_ACTIVE_DATA_FLOW.value: 3,
-    FindingOperation.REPORT_RESTORE_RISK.value: 4,
+    StepOperation.REPORT_REMAINING_RECORD.value: 1,
+    StepOperation.REPORT_EXPOSED_PII.value: 2,
+    StepOperation.REPORT_ACTIVE_DATA_FLOW.value: 3,
+    StepOperation.REPORT_RESTORE_RISK.value: 4,
 
     # REMEDIATION operations
-    RemediationOperation.DISABLE_DATA_FLOW.value: 1,
-    RemediationOperation.BLOCK_RESTORE.value: 2,
-    RemediationOperation.DELETE_RECORD.value: 3,
-    RemediationOperation.REDACT_RECORD.value: 4,
-    RemediationOperation.ANONYMIZE_RECORD.value: 5,
+    StepOperation.DISABLE_DATA_FLOW.value: 1,
+    StepOperation.BLOCK_RESTORE.value: 2,
+    StepOperation.DELETE_RECORD.value: 3,
+    StepOperation.REDACT_RECORD.value: 4,
+    StepOperation.ANONYMIZE_RECORD.value: 5,
 
     # VERIFICATION operations
-    VerificationOperation.VERIFY_RECORD_ABSENT.value: 1,
-    VerificationOperation.VERIFY_RECORD_PRESENT.value: 2,
-    VerificationOperation.VERIFY_RECORD_REDACTED.value: 3,
-    VerificationOperation.VERIFY_RECORD_ANONYMIZED.value: 4,
-    VerificationOperation.VERIFY_DATA_FLOW_DISABLED.value: 5,
-    VerificationOperation.VERIFY_RESTORE_BLOCKED.value: 6,
+    StepOperation.VERIFY_RECORD_ABSENT.value: 1,
+    StepOperation.VERIFY_RECORD_PRESENT.value: 2,
+    StepOperation.VERIFY_RECORD_REDACTED.value: 3,
+    StepOperation.VERIFY_RECORD_ANONYMIZED.value: 4,
+    StepOperation.VERIFY_DATA_FLOW_DISABLED.value: 5,
+    StepOperation.VERIFY_RESTORE_BLOCKED.value: 6,
 }
 
 # Strict 1-to-1 mapping of allowed state for each operation
-ALLOWED_OPERATION_STATES: dict[str, State] = {
-    FindingOperation.REPORT_REMAINING_RECORD.value: State.PRESENT,
-    FindingOperation.REPORT_EXPOSED_PII.value: State.PRESENT,
-    FindingOperation.REPORT_ACTIVE_DATA_FLOW.value: State.ACTIVE,
-    FindingOperation.REPORT_RESTORE_RISK.value: State.ACTIVE,
+ALLOWED_OPERATION_STATES: dict[str, StepState] = {
+    StepOperation.REPORT_REMAINING_RECORD.value: StepState.PRESENT,
+    StepOperation.REPORT_EXPOSED_PII.value: StepState.PRESENT,
+    StepOperation.REPORT_ACTIVE_DATA_FLOW.value: StepState.ACTIVE,
+    StepOperation.REPORT_RESTORE_RISK.value: StepState.ACTIVE,
 
-    RemediationOperation.DISABLE_DATA_FLOW.value: State.DISABLED,
-    RemediationOperation.BLOCK_RESTORE.value: State.BLOCKED,
-    RemediationOperation.DELETE_RECORD.value: State.ABSENT,
-    RemediationOperation.REDACT_RECORD.value: State.REDACTED,
-    RemediationOperation.ANONYMIZE_RECORD.value: State.ANONYMIZED,
+    StepOperation.DISABLE_DATA_FLOW.value: StepState.DISABLED,
+    StepOperation.BLOCK_RESTORE.value: StepState.BLOCKED,
+    StepOperation.DELETE_RECORD.value: StepState.ABSENT,
+    StepOperation.REDACT_RECORD.value: StepState.REDACTED,
+    StepOperation.ANONYMIZE_RECORD.value: StepState.ANONYMIZED,
 
-    VerificationOperation.VERIFY_RECORD_ABSENT.value: State.ABSENT,
-    VerificationOperation.VERIFY_RECORD_PRESENT.value: State.PRESENT,
-    VerificationOperation.VERIFY_RECORD_REDACTED.value: State.REDACTED,
-    VerificationOperation.VERIFY_RECORD_ANONYMIZED.value: State.ANONYMIZED,
-    VerificationOperation.VERIFY_DATA_FLOW_DISABLED.value: State.DISABLED,
-    VerificationOperation.VERIFY_RESTORE_BLOCKED.value: State.BLOCKED,
+    StepOperation.VERIFY_RECORD_ABSENT.value: StepState.ABSENT,
+    StepOperation.VERIFY_RECORD_PRESENT.value: StepState.PRESENT,
+    StepOperation.VERIFY_RECORD_REDACTED.value: StepState.REDACTED,
+    StepOperation.VERIFY_RECORD_ANONYMIZED.value: StepState.ANONYMIZED,
+    StepOperation.VERIFY_DATA_FLOW_DISABLED.value: StepState.DISABLED,
+    StepOperation.VERIFY_RESTORE_BLOCKED.value: StepState.BLOCKED,
 }
 
 # Operations grouped by allowed phase
-PHASE_ALLOWED_OPERATIONS: dict[Phase, set[str]] = {
-    Phase.FINDING: {op.value for op in FindingOperation},
-    Phase.REMEDIATION: {op.value for op in RemediationOperation},
-    Phase.VERIFICATION: {op.value for op in VerificationOperation},
+PHASE_ALLOWED_OPERATIONS: dict[StepPhase, set[str]] = {
+    StepPhase.FINDING: {op.value for op in FindingOperation},
+    StepPhase.REMEDIATION: {op.value for op in RemediationOperation},
+    StepPhase.VERIFICATION: {op.value for op in VerificationOperation},
 }
