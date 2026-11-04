@@ -23,6 +23,7 @@ from code.investigation.models import (
     InvestigatedDataFlow,
     InvestigatedResource,
     InvestigatedRestoreRisk,
+    InvestigationFinding,
     InvestigationResult,
 )
 from code.models.enums import StepState
@@ -498,6 +499,33 @@ def investigate_case(
         if k.evidence_id:
             citations.add(k.evidence_id)
 
+    # Build InvestigationFinding objects for schemas.py compatibility
+    findings_list: List[InvestigationFinding] = []
+    if primary_account and primary_account.state in [StepState.PRESENT, "PRESENT"]:
+        findings_list.append(InvestigationFinding(
+            system_id=primary_account.system_id,
+            resource_id=primary_account.resource_id,
+            record_type="account",
+            state=str(primary_account.state.value if hasattr(primary_account.state, "value") else primary_account.state),
+            evidence_id=primary_account.evidence_id,
+            details="Primary account remaining in failover replica/store",
+        ))
+    for r in records:
+        if r.state in [StepState.PRESENT, "PRESENT", "EXPOSED"] and r.data_category != "SECURITY_AUDIT_LOG":
+            findings_list.append(InvestigationFinding(
+                system_id=r.system_id,
+                resource_id=r.resource_id,
+                record_type=r.data_category or "record",
+                state=str(r.state.value if hasattr(r.state, "value") else r.state),
+                evidence_id=r.evidence_id,
+                details="Remaining record discovered in evidence",
+            ))
+
+    active_flows_list = [
+        {"system_id": f.system_id, "resource_id": f.resource_id, "evidence_id": f.evidence_id, "is_active": f.is_active}
+        for f in data_flows if f.is_active
+    ]
+
     return InvestigationResult(
         case_id=case_id,
         user_id=user_id,
@@ -506,6 +534,8 @@ def investigate_case(
         records=records,
         data_flows=data_flows,
         restore_risks=restore_risks,
+        findings=findings_list,
+        active_data_flows=active_flows_list,
         evidence_citations=sorted(citations),
         details={
             "total_records": len(records),

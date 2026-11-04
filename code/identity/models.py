@@ -82,5 +82,30 @@ class IdentityResolution(BaseModel):
         description="Diagnostic and audit metadata",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    # Aliases/fields aligning with code.models.schemas.IdentityResolution
+    account_ids: List[str] = Field(
+        default_factory=list,
+        description="Discovered account IDs associated with this identity",
+    )
+    emails: List[str] = Field(
+        default_factory=list,
+        description="Alias for all_emails for schemas.py compatibility",
+    )
+    phones: List[str] = Field(
+        default_factory=list,
+        description="Alias for all_phones for schemas.py compatibility",
+    )
+    email_hashes: List[str] = Field(
+        default_factory=list,
+        description="Alias for all_email_hashes for schemas.py compatibility",
+    )
+    names: List[str] = Field(
+        default_factory=list,
+        description="Alias for all_names for schemas.py compatibility",
+    )
+    is_resolved: bool = Field(
+        default=True,
+        description="Alias for is_identified for schemas.py compatibility",
+    )
 
+    model_config = {"arbitrary_types_allowed": True}

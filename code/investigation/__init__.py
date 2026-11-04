@@ -9,6 +9,7 @@ from code.investigation.models import (
     InvestigatedDataFlow,
     InvestigatedResource,
     InvestigatedRestoreRisk,
+    InvestigationFinding,
     InvestigationResult,
 )
 
@@ -16,6 +17,7 @@ __all__ = [
     "InvestigatedDataFlow",
     "InvestigatedResource",
     "InvestigatedRestoreRisk",
+    "InvestigationFinding",
     "InvestigationResult",
     "investigate_case",
 ]

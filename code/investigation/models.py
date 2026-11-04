@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 from code.models.enums import StepState
+from code.models.schemas import InvestigationFinding
 
 
 class InvestigatedResource(BaseModel):
@@ -156,6 +157,15 @@ class InvestigationResult(BaseModel):
     details: Dict[str, Any] = Field(
         default_factory=dict,
         description="Metadata on evidence inspected, filtering applied, and decoy rejection",
+    )
+    # Aliases/fields aligning with code.models.schemas.InvestigationResult
+    findings: List[InvestigationFinding] = Field(
+        default_factory=list,
+        description="Flattened findings list for schemas.py compatibility",
+    )
+    active_data_flows: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Active data flows dictionary list for schemas.py compatibility",
     )
 
     model_config = {"arbitrary_types_allowed": True}
