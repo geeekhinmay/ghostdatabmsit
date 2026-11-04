@@ -2,11 +2,21 @@
 Unit tests for remediation planning module (code/remediation/planner.py).
 """
 
+import inspect
 import pytest
 
 from code.models.enums import DeletionStatus, StepOperation, StepPhase, StepState
 from code.policy.evaluator import evaluate_policy
-from code.remediation.planner import build_remediation_plan
+from code.remediation.planner import _build_remediation_plan_internal, build_remediation_plan
+
+
+def test_build_remediation_plan_exact_signature():
+    """Verify that build_remediation_plan matches the agreed 3-argument signature."""
+    sig = inspect.signature(build_remediation_plan)
+    param_names = list(sig.parameters.keys())
+    assert param_names == ["request", "investigation", "policy"]
+    for p in sig.parameters.values():
+        assert p.default == inspect.Parameter.empty, f"Parameter {p.name} must not have a default value"
 
 
 def test_remediation_empty_for_complete_and_not_applicable():
@@ -72,7 +82,8 @@ def test_remediation_official_ordering():
         ],
     }
 
-    policy = evaluate_policy(req, investigation)
+    policy = evaluate_policy(req, investigation, None)
+    # Call public function with exactly 3 arguments
     plan = build_remediation_plan(req, investigation, policy)
 
     assert len(plan) == 5
@@ -92,7 +103,7 @@ def test_remediation_official_ordering():
         StepOperation.ANONYMIZE_RECORD,
     ]
 
-    # Verify step numbers follow findings consecutively
+    # Verify step numbers follow findings consecutively automatically
     finding_count = len(policy.findings)
     expected_step_nos = list(range(finding_count + 1, finding_count + 1 + len(plan)))
     assert [s.step_no for s in plan] == expected_step_nos
@@ -125,7 +136,8 @@ def test_remediation_secondary_sorting_by_system_and_resource():
         ],
     }
 
-    plan = build_remediation_plan({}, {}, policy, start_step_no=2)
+    # Public function automatically starts after findings (len=1, so starts at 2)
+    plan = build_remediation_plan({}, {}, policy)
     assert len(plan) == 3
 
     # Expected order: account_service/account_005, search_service/search_001, search_service/search_999
@@ -133,3 +145,21 @@ def test_remediation_secondary_sorting_by_system_and_resource():
     assert plan[1].system_id == "search_service" and plan[1].resource_id == "search_001"
     assert plan[2].system_id == "search_service" and plan[2].resource_id == "search_999"
     assert [s.step_no for s in plan] == [2, 3, 4]
+
+
+def test_internal_remediation_helper_with_explicit_start_no():
+    """Verify internal helper accepts an explicit starting step number."""
+    policy = {
+        "deletion_status": DeletionStatus.INCOMPLETE,
+        "remediation_items": [
+            {
+                "system_id": "account_service",
+                "resource_id": "account_001",
+                "operation": StepOperation.DELETE_RECORD,
+                "state": StepState.ABSENT,
+            }
+        ],
+    }
+    plan = _build_remediation_plan_internal({}, {}, policy, start_step_no=10)
+    assert len(plan) == 1
+    assert plan[0].step_no == 10

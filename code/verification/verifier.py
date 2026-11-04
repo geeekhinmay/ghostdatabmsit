@@ -28,6 +28,8 @@ from code.models.enums import DeletionStatus, StepOperation, StepPhase, StepStat
 from code.models.schemas import AuditStep, DeletionRequest
 from code.policy.models import PolicyDecision
 
+# Alias for compatibility if Step is referenced
+Step = AuditStep
 
 # Canonical operation priority for VERIFICATION phase
 VERIFICATION_OP_ORDER: Dict[StepOperation, int] = {
@@ -64,49 +66,29 @@ def _sort_verification_key(step: AuditStep) -> tuple:
     return (op_prio, step.system_id or "", step.resource_id or "")
 
 
-def build_verification_steps(
+def _build_verification_steps_internal(
     request: Union[DeletionRequest, Dict[str, Any]],
     investigation: Any,
     policy: Union[PolicyDecision, Dict[str, Any]],
-    start_step_no: Optional[int] = None,
+    start_step_no: int = 1,
 ) -> List[AuditStep]:
     """
-    Public contract: build verification steps for a case.
-
-    Args:
-        request: DeletionRequest object or dict.
-        investigation: InvestigationResult or dict.
-        policy: PolicyDecision object or dict returned by evaluate_policy.
-        start_step_no: Optional starting step number. If None, calculated
-                       automatically from findings and remediation counts.
-
-    Returns:
-        List of AuditStep in VERIFICATION phase.
-        Empty list for NOT_APPLICABLE cases.
+    Internal helper that accepts an explicit starting step number.
+    Used internally when orchestrating multi-phase sequences.
     """
     # Extract fields from policy
     if isinstance(policy, dict):
         status = policy.get("deletion_status")
-        findings = policy.get("findings", [])
         remediation_items = policy.get("remediation_items", [])
         verification_items = policy.get("verification_items", [])
     else:
         status = policy.deletion_status
-        findings = policy.findings
         remediation_items = policy.remediation_items
         verification_items = policy.verification_items
 
     # Non-deletion requests produce NO verification steps
     if status == DeletionStatus.NOT_APPLICABLE:
         return []
-
-    # Determine default starting step number if not provided
-    if start_step_no is None:
-        if status == DeletionStatus.COMPLETE:
-            start_step_no = 1
-        else:
-            # For INCOMPLETE, follows findings + remediation
-            start_step_no = len(findings) + len(remediation_items) + 1
 
     steps: List[AuditStep] = []
     seen_resources: set = set()
@@ -210,8 +192,56 @@ def build_verification_steps(
     # Sort strictly by official order
     steps.sort(key=_sort_verification_key)
 
-    # Assign sequential step numbers
+    # Assign sequential step numbers starting from start_step_no
     for idx, step in enumerate(steps, start=start_step_no):
         step.step_no = idx
 
     return steps
+
+
+def build_verification_steps(
+    request: Union[DeletionRequest, Dict[str, Any]],
+    investigation: Any,
+    policy: Union[PolicyDecision, Dict[str, Any]],
+) -> List[AuditStep]:
+    """
+    Public contract: build verification steps for a case.
+
+    Authoritative signature matching team contract:
+        build_verification_steps(request, investigation, policy) -> list[AuditStep]
+
+    Args:
+        request: DeletionRequest object or dict.
+        investigation: InvestigationResult or dict.
+        policy: PolicyDecision object or dict returned by evaluate_policy.
+
+    Returns:
+        List of AuditStep in VERIFICATION phase.
+        Empty list for NOT_APPLICABLE cases.
+    """
+    # Extract fields from policy to determine starting step number
+    if isinstance(policy, dict):
+        status = policy.get("deletion_status")
+        findings = policy.get("findings", [])
+        remediation_items = policy.get("remediation_items", [])
+    else:
+        status = policy.deletion_status
+        findings = policy.findings
+        remediation_items = policy.remediation_items
+
+    # Non-deletion requests produce NO verification steps
+    if status == DeletionStatus.NOT_APPLICABLE:
+        return []
+
+    if status == DeletionStatus.COMPLETE:
+        start_step_no = 1
+    else:
+        # In INCOMPLETE cases, starts immediately after findings + remediation
+        start_step_no = len(findings) + len(remediation_items) + 1
+
+    return _build_verification_steps_internal(
+        request=request,
+        investigation=investigation,
+        policy=policy,
+        start_step_no=start_step_no,
+    )

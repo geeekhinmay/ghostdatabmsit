@@ -51,7 +51,7 @@ def _sort_findings_key(step: AuditStep) -> tuple:
 def evaluate_policy(
     request: Union[DeletionRequest, Dict[str, Any]],
     investigation: Any,
-    rules: Optional[Union[List[DeletionRule], Dict[str, DeletionRule]]] = None,
+    rules: Any,
 ) -> PolicyDecision:
     """
     Public contract: evaluate deletion policy on a request and its investigation.

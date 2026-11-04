@@ -30,7 +30,7 @@ def test_sample_case_01_complete():
         ]
     }
 
-    policy = evaluate_policy(req, investigation)
+    policy = evaluate_policy(req, investigation, None)
     assert policy.deletion_status == DeletionStatus.COMPLETE
 
     remediation = build_remediation_plan(req, investigation, policy)
@@ -61,7 +61,7 @@ def test_sample_case_05_incomplete():
         ]
     }
 
-    policy = evaluate_policy(req, investigation)
+    policy = evaluate_policy(req, investigation, None)
     assert policy.deletion_status == DeletionStatus.INCOMPLETE
     assert len(policy.findings) == 1
     assert policy.findings[0].operation == StepOperation.REPORT_REMAINING_RECORD
@@ -131,7 +131,7 @@ def test_sample_case_11_complex():
         ],
     }
 
-    policy = evaluate_policy(req, investigation)
+    policy = evaluate_policy(req, investigation, None)
     assert policy.deletion_status == DeletionStatus.INCOMPLETE
     assert len(policy.findings) == 4
 

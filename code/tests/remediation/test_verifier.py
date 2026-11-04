@@ -2,12 +2,22 @@
 Unit tests for verification step generation module (code/verification/verifier.py).
 """
 
+import inspect
 import pytest
 
 from code.models.enums import DeletionStatus, StepOperation, StepPhase, StepState
 from code.policy.evaluator import evaluate_policy
 from code.remediation.planner import build_remediation_plan
-from code.verification.verifier import build_verification_steps
+from code.verification.verifier import _build_verification_steps_internal, build_verification_steps
+
+
+def test_build_verification_steps_exact_signature():
+    """Verify that build_verification_steps matches the agreed 3-argument signature."""
+    sig = inspect.signature(build_verification_steps)
+    param_names = list(sig.parameters.keys())
+    assert param_names == ["request", "investigation", "policy"]
+    for p in sig.parameters.values():
+        assert p.default == inspect.Parameter.empty, f"Parameter {p.name} must not have a default value"
 
 
 def test_verification_empty_for_not_applicable():
@@ -46,7 +56,7 @@ def test_verification_for_complete_case_has_evidence_ids():
         ]
     }
 
-    policy = evaluate_policy(req, investigation)
+    policy = evaluate_policy(req, investigation, None)
     assert policy.deletion_status == DeletionStatus.COMPLETE
 
     v_steps = build_verification_steps(req, investigation, policy)
@@ -82,7 +92,7 @@ def test_verification_for_incomplete_case_has_empty_evidence_ids():
         ]
     }
 
-    policy = evaluate_policy(req, investigation)
+    policy = evaluate_policy(req, investigation, None)
     assert policy.deletion_status == DeletionStatus.INCOMPLETE
 
     plan = build_remediation_plan(req, investigation, policy)
@@ -136,3 +146,22 @@ def test_verification_official_operation_order():
     ]
     assert [s.operation for s in steps] == expected_ops
     assert [s.step_no for s in steps] == [1, 2, 3, 4, 5, 6]
+
+
+def test_internal_verification_helper_with_explicit_start_no():
+    """Verify internal helper accepts an explicit starting step number."""
+    policy = {
+        "deletion_status": DeletionStatus.COMPLETE,
+        "verification_items": [
+            {
+                "system_id": "account_service",
+                "resource_id": "account_001",
+                "operation": StepOperation.VERIFY_RECORD_ABSENT,
+                "state": StepState.ABSENT,
+                "evidence_id": "evidence_54",
+            }
+        ],
+    }
+    steps = _build_verification_steps_internal({}, {}, policy, start_step_no=5)
+    assert len(steps) == 1
+    assert steps[0].step_no == 5

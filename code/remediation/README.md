@@ -27,7 +27,6 @@ remediation_steps: list[AuditStep] = build_remediation_plan(request, investigati
 - `request`: `DeletionRequest` object or dict.
 - `investigation`: `InvestigationResult` object or dict.
 - `policy`: `PolicyDecision` object or dict returned by `evaluate_policy`.
-- `start_step_no`: Optional int starting step number (defaults to consecutive numbering after policy findings).
 
 ### Return Value
 `list[AuditStep]`: Ordered remediation steps with `phase="REMEDIATION"` and `evidence_id=""`. Empty for `COMPLETE` or `NOT_APPLICABLE` cases.
@@ -38,6 +37,6 @@ remediation_steps: list[AuditStep] = build_remediation_plan(request, investigati
 from code.policy import evaluate_policy
 from code.remediation import build_remediation_plan
 
-policy = evaluate_policy(request, investigation)
+policy = evaluate_policy(request, investigation, rules)
 remediation_steps = build_remediation_plan(request, investigation, policy)
 ```

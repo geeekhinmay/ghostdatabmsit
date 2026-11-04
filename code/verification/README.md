@@ -30,7 +30,6 @@ verification_steps: list[AuditStep] = build_verification_steps(request, investig
 - `request`: `DeletionRequest` object or dict.
 - `investigation`: `InvestigationResult` object or dict.
 - `policy`: `PolicyDecision` object or dict returned by `evaluate_policy`.
-- `start_step_no`: Optional int starting step number (defaults to consecutive numbering after findings and remediation).
 
 ### Return Value
 `list[AuditStep]`: Ordered verification steps with `phase="VERIFICATION"`. Empty for `NOT_APPLICABLE` cases.
@@ -42,7 +41,7 @@ from code.policy import evaluate_policy
 from code.remediation import build_remediation_plan
 from code.verification import build_verification_steps
 
-policy = evaluate_policy(request, investigation)
+policy = evaluate_policy(request, investigation, rules)
 remediation_steps = build_remediation_plan(request, investigation, policy)
 verification_steps = build_verification_steps(request, investigation, policy)
 

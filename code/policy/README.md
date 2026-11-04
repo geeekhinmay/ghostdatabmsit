@@ -16,13 +16,13 @@ The policy evaluation module is responsible for:
 ```python
 from code.policy import evaluate_policy, PolicyDecision
 
-decision: PolicyDecision = evaluate_policy(request, investigation, rules=None)
+decision: PolicyDecision = evaluate_policy(request, investigation, rules)
 ```
 
 ### Parameters
 - `request`: A `DeletionRequest` instance or dictionary with `case_id` and `request_text`.
 - `investigation`: An `InvestigationResult` instance or dictionary with discovered `records`, `data_flows`, and `restore_risks`.
-- `rules`: Optional list or dictionary of `DeletionRule` instances (defaults to canonical `deletion_rules.csv` rules).
+- `rules`: List or dictionary of `DeletionRule` instances (or `DatasetBundle.deletion_rules`).
 
 ### Return Value
 `PolicyDecision`:
@@ -40,7 +40,7 @@ from code.models.schemas import DeletionRequest
 from code.policy import evaluate_policy
 
 # Call evaluate_policy
-decision = evaluate_policy(request, investigation)
+decision = evaluate_policy(request, investigation, rules)
 
 if decision.deletion_status == DeletionStatus.NOT_APPLICABLE:
     # Non-deletion request -> output steps_json = []

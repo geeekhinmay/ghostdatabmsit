@@ -23,6 +23,8 @@ from code.models.enums import DeletionStatus, StepOperation, StepPhase, StepStat
 from code.models.schemas import AuditStep, DeletionRequest
 from code.policy.models import PolicyDecision
 
+# Alias for compatibility if Step is referenced
+Step = AuditStep
 
 # Canonical operation priority for REMEDIATION phase
 REMEDIATION_OP_ORDER: Dict[StepOperation, int] = {
@@ -40,43 +42,27 @@ def _sort_remediation_key(step: AuditStep) -> tuple:
     return (op_prio, step.system_id or "", step.resource_id or "")
 
 
-def build_remediation_plan(
+def _build_remediation_plan_internal(
     request: Union[DeletionRequest, Dict[str, Any]],
     investigation: Any,
     policy: Union[PolicyDecision, Dict[str, Any]],
     start_step_no: int = 1,
 ) -> List[AuditStep]:
     """
-    Public contract: build an ordered remediation plan for an investigated case.
-
-    Args:
-        request: DeletionRequest object or dict.
-        investigation: InvestigationResult or dict.
-        policy: PolicyDecision object or dict returned by evaluate_policy.
-        start_step_no: Step number to start from (defaults to 1 if standalone,
-                       or consecutive after findings if integrated).
-
-    Returns:
-        List of AuditStep in REMEDIATION phase with evidence_id="".
-        Empty list for COMPLETE or NOT_APPLICABLE cases.
+    Internal helper that accepts an explicit starting step number.
+    Used internally when orchestrating multi-phase sequences.
     """
     # Check deletion status
     if isinstance(policy, dict):
         status = policy.get("deletion_status")
-        findings = policy.get("findings", [])
         items = policy.get("remediation_items", [])
     else:
         status = policy.deletion_status
-        findings = policy.findings
         items = policy.remediation_items
 
     # Only INCOMPLETE cases produce remediation steps
     if status != DeletionStatus.INCOMPLETE:
         return []
-
-    # If start_step_no is 1 but policy has findings, offset automatically
-    if start_step_no == 1 and len(findings) > 0:
-        start_step_no = len(findings) + 1
 
     steps: List[AuditStep] = []
 
@@ -107,8 +93,44 @@ def build_remediation_plan(
     # Sort strictly according to official ordering
     steps.sort(key=_sort_remediation_key)
 
-    # Number consecutively
+    # Number consecutively from start_step_no
     for idx, step in enumerate(steps, start=start_step_no):
         step.step_no = idx
 
     return steps
+
+
+def build_remediation_plan(
+    request: Union[DeletionRequest, Dict[str, Any]],
+    investigation: Any,
+    policy: Union[PolicyDecision, Dict[str, Any]],
+) -> List[AuditStep]:
+    """
+    Public contract: build an ordered remediation plan for an investigated case.
+
+    Authoritative signature matching team contract:
+        build_remediation_plan(request, investigation, policy) -> list[AuditStep]
+
+    Args:
+        request: DeletionRequest object or dict.
+        investigation: InvestigationResult or dict.
+        policy: PolicyDecision object or dict returned by evaluate_policy.
+
+    Returns:
+        List of AuditStep in REMEDIATION phase with evidence_id="".
+        Empty list for COMPLETE or NOT_APPLICABLE cases.
+    """
+    # Determine start_step_no automatically from policy findings
+    if isinstance(policy, dict):
+        findings = policy.get("findings", [])
+    else:
+        findings = getattr(policy, "findings", []) or []
+
+    start_step_no = len(findings) + 1 if len(findings) > 0 else 1
+
+    return _build_remediation_plan_internal(
+        request=request,
+        investigation=investigation,
+        policy=policy,
+        start_step_no=start_step_no,
+    )

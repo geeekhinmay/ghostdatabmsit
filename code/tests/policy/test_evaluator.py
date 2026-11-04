@@ -2,18 +2,29 @@
 Unit tests for policy evaluation engine (code/policy/evaluator.py).
 """
 
+import inspect
 import pytest
 from datetime import datetime
 
 from code.models.enums import (
     DeletionStatus,
     ReportedStatus,
+    RequiredAction,
     StepOperation,
     StepPhase,
     StepState,
 )
-from code.models.schemas import DeletionRequest
+from code.models.schemas import DeletionRequest, DeletionRule
 from code.policy.evaluator import evaluate_policy
+
+
+def test_evaluate_policy_exact_signature():
+    """Verify that evaluate_policy matches the agreed 3-argument signature."""
+    sig = inspect.signature(evaluate_policy)
+    param_names = list(sig.parameters.keys())
+    assert param_names == ["request", "investigation", "rules"]
+    for p in sig.parameters.values():
+        assert p.default == inspect.Parameter.empty, f"Parameter {p.name} must not have a default value"
 
 
 def test_evaluate_policy_non_deletion():
@@ -22,7 +33,7 @@ def test_evaluate_policy_non_deletion():
         "case_id": "case_non_del",
         "request_text": "Please provide a copy of all my data under GDPR SAR.",
     }
-    decision = evaluate_policy(req, {})
+    decision = evaluate_policy(req, {}, None)
     assert decision.deletion_status == DeletionStatus.NOT_APPLICABLE
     assert decision.is_deletion_request is False
     assert len(decision.findings) == 0
@@ -76,11 +87,41 @@ def test_evaluate_policy_complete_case():
         ],
     }
 
-    decision = evaluate_policy(req, investigation)
+    decision = evaluate_policy(req, investigation, None)
     assert decision.deletion_status == DeletionStatus.COMPLETE
     assert decision.is_deletion_request is True
     assert len(decision.findings) == 0
     assert len(decision.verification_items) == 5
+
+
+def test_evaluate_policy_with_custom_rules_list():
+    """Verify evaluation when rules is passed as a list of DeletionRule objects."""
+    req = {
+        "case_id": "case_custom_rules",
+        "request_text": "Please delete my account.",
+    }
+    rules = [
+        DeletionRule(
+            rule_id="r_custom_01",
+            data_category="USER_PROFILE",
+            condition="Always",
+            required_action=RequiredAction.DELETE,
+        )
+    ]
+    investigation = {
+        "records": [
+            {
+                "system_id": "account_service",
+                "resource_id": "account_001",
+                "state": "PRESENT",
+                "evidence_id": "evidence_54",
+            }
+        ]
+    }
+    decision = evaluate_policy(req, investigation, rules)
+    assert decision.deletion_status == DeletionStatus.INCOMPLETE
+    assert len(decision.findings) == 1
+    assert decision.treatment_by_resource["account_001"] == RequiredAction.DELETE
 
 
 def test_evaluate_policy_incomplete_remaining_record():
@@ -100,7 +141,7 @@ def test_evaluate_policy_incomplete_remaining_record():
         ]
     }
 
-    decision = evaluate_policy(req, investigation)
+    decision = evaluate_policy(req, investigation, None)
     assert decision.deletion_status == DeletionStatus.INCOMPLETE
     assert len(decision.findings) == 1
     finding = decision.findings[0]
@@ -137,7 +178,7 @@ def test_evaluate_policy_incomplete_exposed_pii():
         ]
     }
 
-    decision = evaluate_policy(req, investigation)
+    decision = evaluate_policy(req, investigation, None)
     assert decision.deletion_status == DeletionStatus.INCOMPLETE
     assert len(decision.findings) == 2
     for f in decision.findings:
@@ -178,7 +219,7 @@ def test_evaluate_policy_active_data_flow_and_restore_risk():
         ],
     }
 
-    decision = evaluate_policy(req, investigation)
+    decision = evaluate_policy(req, investigation, None)
     assert decision.deletion_status == DeletionStatus.INCOMPLETE
     assert len(decision.findings) == 3
 
@@ -209,6 +250,6 @@ def test_evaluate_policy_with_deletion_request_model():
         audit_at=now,
         request_text="Please delete my account and remove my personal details.",
     )
-    decision = evaluate_policy(req, {"records": []})
+    decision = evaluate_policy(req, {"records": []}, None)
     assert decision.case_id == "case_typed_01"
     assert decision.deletion_status == DeletionStatus.COMPLETE
