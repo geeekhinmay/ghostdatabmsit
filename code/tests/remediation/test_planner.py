@@ -1,0 +1,165 @@
+"""
+Unit tests for remediation planning module (code/remediation/planner.py).
+"""
+
+import inspect
+import pytest
+
+from code.models.enums import DeletionStatus, StepOperation, StepPhase, StepState
+from code.policy.evaluator import evaluate_policy
+from code.remediation.planner import _build_remediation_plan_internal, build_remediation_plan
+
+
+def test_build_remediation_plan_exact_signature():
+    """Verify that build_remediation_plan matches the agreed 3-argument signature."""
+    sig = inspect.signature(build_remediation_plan)
+    param_names = list(sig.parameters.keys())
+    assert param_names == ["request", "investigation", "policy"]
+    for p in sig.parameters.values():
+        assert p.default == inspect.Parameter.empty, f"Parameter {p.name} must not have a default value"
+
+
+def test_remediation_empty_for_complete_and_not_applicable():
+    """Remediation plan must be empty for COMPLETE and NOT_APPLICABLE cases."""
+    # NOT_APPLICABLE
+    policy_na = {"deletion_status": DeletionStatus.NOT_APPLICABLE, "findings": [], "remediation_items": []}
+    assert build_remediation_plan({}, {}, policy_na) == []
+
+    # COMPLETE
+    policy_comp = {"deletion_status": DeletionStatus.COMPLETE, "findings": [], "remediation_items": []}
+    assert build_remediation_plan({}, {}, policy_comp) == []
+
+
+def test_remediation_official_ordering():
+    """
+    Verify strict official operation order:
+    1. DISABLE_DATA_FLOW
+    2. BLOCK_RESTORE
+    3. DELETE_RECORD
+    4. REDACT_RECORD
+    5. ANONYMIZE_RECORD
+    followed by system_id ASC, resource_id ASC.
+    """
+    req = {"case_id": "case_11", "request_text": "Please delete my account and data."}
+    investigation = {
+        "records": [
+            {
+                "system_id": "search_service",
+                "resource_id": "search_052",
+                "state": "PRESENT",
+                "evidence_id": "evidence_03",
+            },
+            {
+                "system_id": "analytics_platform",
+                "resource_id": "analytics_2034",
+                "state": "PRESENT",
+                "is_attributable": True,
+                "evidence_id": "evidence_03",
+            },
+            {
+                "system_id": "support_platform",
+                "resource_id": "support_864",
+                "state": "PRESENT",
+                "has_exposed_pii": True,
+                "evidence_id": "evidence_03",
+            },
+        ],
+        "data_flows": [
+            {
+                "system_id": "integration_service",
+                "resource_id": "data_flow_9522",
+                "is_active": True,
+                "evidence_id": "evidence_03",
+            }
+        ],
+        "restore_risks": [
+            {
+                "system_id": "backup_service",
+                "resource_id": "backup_1001",
+                "is_blocked": False,
+                "evidence_id": "evidence_03",
+            }
+        ],
+    }
+
+    policy = evaluate_policy(req, investigation, None)
+    # Call public function with exactly 3 arguments
+    plan = build_remediation_plan(req, investigation, policy)
+
+    assert len(plan) == 5
+
+    # Check phase
+    for step in plan:
+        assert step.phase == StepPhase.REMEDIATION
+        assert step.evidence_id == ""  # Proposed remediation uses empty evidence_id
+
+    # Verify operation ordering
+    ops = [s.operation for s in plan]
+    assert ops == [
+        StepOperation.DISABLE_DATA_FLOW,
+        StepOperation.BLOCK_RESTORE,
+        StepOperation.DELETE_RECORD,
+        StepOperation.REDACT_RECORD,
+        StepOperation.ANONYMIZE_RECORD,
+    ]
+
+    # Verify step numbers follow findings consecutively automatically
+    finding_count = len(policy.findings)
+    expected_step_nos = list(range(finding_count + 1, finding_count + 1 + len(plan)))
+    assert [s.step_no for s in plan] == expected_step_nos
+
+
+def test_remediation_secondary_sorting_by_system_and_resource():
+    """Within same operation, items must be sorted by system_id ASC, then resource_id ASC."""
+    policy = {
+        "deletion_status": DeletionStatus.INCOMPLETE,
+        "findings": [{"dummy": True}],
+        "remediation_items": [
+            {
+                "system_id": "search_service",
+                "resource_id": "search_999",
+                "operation": StepOperation.DELETE_RECORD,
+                "state": StepState.ABSENT,
+            },
+            {
+                "system_id": "account_service",
+                "resource_id": "account_005",
+                "operation": StepOperation.DELETE_RECORD,
+                "state": StepState.ABSENT,
+            },
+            {
+                "system_id": "search_service",
+                "resource_id": "search_001",
+                "operation": StepOperation.DELETE_RECORD,
+                "state": StepState.ABSENT,
+            },
+        ],
+    }
+
+    # Public function automatically starts after findings (len=1, so starts at 2)
+    plan = build_remediation_plan({}, {}, policy)
+    assert len(plan) == 3
+
+    # Expected order: account_service/account_005, search_service/search_001, search_service/search_999
+    assert plan[0].system_id == "account_service" and plan[0].resource_id == "account_005"
+    assert plan[1].system_id == "search_service" and plan[1].resource_id == "search_001"
+    assert plan[2].system_id == "search_service" and plan[2].resource_id == "search_999"
+    assert [s.step_no for s in plan] == [2, 3, 4]
+
+
+def test_internal_remediation_helper_with_explicit_start_no():
+    """Verify internal helper accepts an explicit starting step number."""
+    policy = {
+        "deletion_status": DeletionStatus.INCOMPLETE,
+        "remediation_items": [
+            {
+                "system_id": "account_service",
+                "resource_id": "account_001",
+                "operation": StepOperation.DELETE_RECORD,
+                "state": StepState.ABSENT,
+            }
+        ],
+    }
+    plan = _build_remediation_plan_internal({}, {}, policy, start_step_no=10)
+    assert len(plan) == 1
+    assert plan[0].step_no == 10
