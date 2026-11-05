@@ -1,1 +1,1 @@
-# code/tests/__init__.py
+"""Test package for Ghost Data deletion audit."""

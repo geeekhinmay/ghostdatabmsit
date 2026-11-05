@@ -141,3 +141,11 @@ def test_empty_or_whitespace_requests():
     assert classify_request_intent("") == (False, "Empty or missing request text")
     assert classify_request_intent("   ") == (False, "Empty or missing request text")
     assert classify_request_intent(None) == (False, "Empty or missing request text")
+
+
+def test_intent_confirm_profile_gone():
+    """Verify that requests asking to confirm an account or profile is gone are recognized as deletion audits."""
+    text = "Please check the latest state and confirm that the profile is gone and remaining records cannot identify me."
+    is_del, reason = classify_request_intent(text)
+    assert is_del is True
+    assert reason is None

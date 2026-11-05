@@ -1,12 +1,24 @@
+# Python bytecode & cache
 __pycache__/
+*.py[cod]
 *.pyc
 *.pyo
+*$py.class
+.pytest_cache/
+
+# Environments
 .venv/
 venv/
+ENV/
 .env
+
+# Build & packaging
 *.egg-info/
 dist/
 build/
-.pytest_cache/
 node_modules/
+
+# Output and temp files
+dataset/
+*.zip
 .DS_Store
