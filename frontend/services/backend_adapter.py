@@ -368,9 +368,33 @@ class BackendAdapter:
         from code.identity.resolver import resolve_identity
         identity = resolve_identity(req, bundle)
 
-        # Retrieve steps from output.csv or run audit_case
-        orch = self.get_orchestrator()
-        row = orch.audit_case(req, bundle)
+        # Retrieve authoritative steps and verdict from output.csv or fallback to run audit_case
+        out_row = None
+        for out_candidate in [self.config.output_path, self.config.project_root / "sample_output_generated.csv"]:
+            if out_candidate.is_file():
+                try:
+                    with open(out_candidate, mode="r", encoding="utf-8-sig") as f:
+                        for r in csv.DictReader(f):
+                            if r.get("case_id", "").strip() == case_id:
+                                st_val = r.get("deletion_status", "").strip()
+                                try:
+                                    s_json = json.loads(r.get("steps_json", "[]"))
+                                except Exception:
+                                    s_json = []
+                                out_row = (st_val, s_json)
+                                break
+                except Exception:
+                    pass
+            if out_row:
+                break
+
+        if out_row:
+            final_status, raw_steps_data = out_row
+        else:
+            orch = self.get_orchestrator()
+            row = orch.audit_case(req, bundle)
+            final_status = row.deletion_status.value if hasattr(row.deletion_status, "value") else str(row.deletion_status)
+            raw_steps_data = row.steps_json
 
         step_dtos: List[StepDTO] = []
         findings_count = 0
@@ -378,10 +402,23 @@ class BackendAdapter:
         verification_count = 0
         cited_evidence: Set[str] = set()
 
-        for s in row.steps_json:
-            p_val = s.phase.value if hasattr(s.phase, "value") else str(s.phase)
-            op_val = s.operation.value if hasattr(s.operation, "value") else str(s.operation)
-            st_val = s.state.value if hasattr(s.state, "value") else str(s.state)
+        for s in raw_steps_data:
+            if isinstance(s, dict):
+                p_val = s.get("phase", "")
+                op_val = s.get("operation", "")
+                st_val = s.get("state", "")
+                sys_id = s.get("system_id", "")
+                res_id = s.get("resource_id", "")
+                ev_id = s.get("evidence_id", "")
+                s_no = s.get("step_no", 1)
+            else:
+                p_val = s.phase.value if hasattr(s.phase, "value") else str(s.phase)
+                op_val = s.operation.value if hasattr(s.operation, "value") else str(s.operation)
+                st_val = s.state.value if hasattr(s.state, "value") else str(s.state)
+                sys_id = s.system_id
+                res_id = s.resource_id
+                ev_id = s.evidence_id or ""
+                s_no = s.step_no
             
             if p_val == "FINDING":
                 findings_count += 1
@@ -390,18 +427,18 @@ class BackendAdapter:
             elif p_val == "VERIFICATION":
                 verification_count += 1
 
-            if s.evidence_id:
-                cited_evidence.add(s.evidence_id)
+            if ev_id:
+                cited_evidence.add(ev_id)
 
             step_dtos.append(
                 StepDTO(
-                    step_no=s.step_no,
+                    step_no=s_no,
                     phase=p_val,
                     operation=op_val,
                     state=st_val,
-                    system_id=s.system_id,
-                    resource_id=s.resource_id,
-                    evidence_id=s.evidence_id or "",
+                    system_id=sys_id,
+                    resource_id=res_id,
+                    evidence_id=ev_id,
                 )
             )
 
@@ -421,7 +458,7 @@ class BackendAdapter:
 
         return CaseDetailDTO(
             case_id=req.case_id,
-            deletion_status=row.deletion_status.value if hasattr(row.deletion_status, "value") else str(row.deletion_status),
+            deletion_status=final_status,
             request_email=req.email,
             requested_at=str(req.requested_at),
             reported_status=req.reported_status.value if hasattr(req.reported_status, "value") else str(req.reported_status),
