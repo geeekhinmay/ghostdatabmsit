@@ -103,7 +103,7 @@ if run_sample_btn or run_full_btn:
         if result.is_valid:
             st.markdown(
                 """
-                <div style="background-color: rgba(76, 175, 80, 0.12); border: 1px solid #4caf50; border-radius: 8px; padding: 12px 18px; margin-top: 10px;">
+                <div style="background-color: rgba(76, 175, 80, 0.12); border: 1px solid #4caf50; border-radius: 8px; padding: 12px 18px; margin-top: 10px; margin-bottom: 12px;">
                     <h5 style="color: #81c784; margin: 0 0 4px 0;">🎯 OFFICIAL SUBMISSION VALIDATION PASSED</h5>
                     <ul style="margin: 0; padding-left: 20px; font-size: 0.9rem; color: #c8e6c9;">
                         <li><strong>Header:</strong> Exact match <code>case_id,deletion_status,steps_json</code></li>
@@ -118,6 +118,11 @@ if run_sample_btn or run_full_btn:
             )
         else:
             st.error("❌ Output validation failed. Check console or report for details.")
+
+        if result.logs:
+            with st.expander("🖥️ View Live Execution & Pipeline Terminal Logs", expanded=True):
+                st.code("\n".join(result.logs), language="bash")
+        st.write("")
 
     else:
         st.error(f"❌ Execution failed: {result.error_message}")

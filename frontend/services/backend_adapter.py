@@ -66,6 +66,7 @@ class AuditExecutionResult:
     total_steps: int = 0
     is_valid: bool = False
     validation_errors: List[str] = field(default_factory=list)
+    logs: List[str] = field(default_factory=list)
     error_message: Optional[str] = None
 
 
@@ -219,7 +220,27 @@ class BackendAdapter:
         """
         mode_str = "SAMPLE" if sample_mode else "FULL"
         start_time = time.time()
-        
+        captured_logs: List[str] = []
+
+        class TerminalAndBufferHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    msg = self.format(record)
+                    captured_logs.append(msg)
+                    # Write directly to terminal console
+                    if sys.__stdout__:
+                        sys.__stdout__.write(f"[AUDIT] {msg}\n")
+                        sys.__stdout__.flush()
+                except Exception:
+                    pass
+
+        custom_handler = TerminalAndBufferHandler()
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        custom_handler.setFormatter(formatter)
+        root_logger = logging.getLogger()
+        root_logger.addHandler(custom_handler)
+        root_logger.setLevel(logging.INFO)
+
         try:
             config = self.config
             orch = self.get_orchestrator()
@@ -277,6 +298,7 @@ class BackendAdapter:
                 status_counts=status_counts,
                 total_steps=total_steps,
                 is_valid=is_valid,
+                logs=captured_logs,
             )
 
         except Exception as e:
@@ -288,8 +310,11 @@ class BackendAdapter:
                 total_cases=0,
                 duration_seconds=duration,
                 output_path=str(self.config.output_path),
+                logs=captured_logs,
                 error_message=str(e),
             )
+        finally:
+            root_logger.removeHandler(custom_handler)
 
     def get_audit_results(self, output_path: Optional[Path | str] = None) -> List[Dict[str, Any]]:
         """
