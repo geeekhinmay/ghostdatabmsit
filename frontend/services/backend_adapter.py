@@ -262,9 +262,12 @@ class BackendAdapter:
             if progress_callback:
                 progress_callback(0, total_cases, f"Starting {mode_str} audit of {total_cases} cases...")
 
+            # Output path: keep output.csv reserved for full 518 cases
+            target_out_path = (config.project_root / "sample_output_generated.csv") if sample_mode else config.output_path
+
             results = orch.run(
                 dataset_dir=config.dataset_dir,
-                output_path=config.output_path,
+                output_path=target_out_path,
                 case_ids=case_ids,
                 validate=True,
             )
@@ -281,7 +284,7 @@ class BackendAdapter:
 
             # Validate output
             is_valid = validate_output(
-                config.output_path,
+                target_out_path,
                 expected_rows=len(results),
                 dataset_dir=config.dataset_dir,
             )
@@ -294,7 +297,7 @@ class BackendAdapter:
                 mode=mode_str,
                 total_cases=len(results),
                 duration_seconds=duration,
-                output_path=str(config.output_path),
+                output_path=str(target_out_path),
                 status_counts=status_counts,
                 total_steps=total_steps,
                 is_valid=is_valid,
