@@ -6,6 +6,7 @@ Deep-Dive into Customer Case Dossiers, Identity Graphs, and Audit Steps
 from __future__ import annotations
 
 import sys
+import importlib
 from pathlib import Path
 
 # Add project root to sys.path
@@ -13,11 +14,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from frontend.services.backend_adapter import backend_adapter
+if "frontend.services.backend_adapter" in sys.modules:
+    ba_mod = sys.modules["frontend.services.backend_adapter"]
+    if isinstance(ba_mod, type(sys)):
+        importlib.reload(ba_mod)
+        from frontend.services.backend_adapter import backend_adapter
+
 import pandas as pd
 import streamlit as st
 from frontend.components.metrics_cards import render_status_badge
 from frontend.components.timeline import render_step_timeline
-from frontend.services.backend_adapter import backend_adapter
 from frontend.services.terminal_logger import log_to_terminal
 
 st.set_page_config(page_title="Case Explorer | NORTHSTAR", page_icon="🔍", layout="wide")
@@ -39,7 +46,7 @@ with col_sel1:
     selected_case_id = st.selectbox(
         "Select Case ID to Inspect:",
         options=case_ids,
-        index=0,
+        index=case_ids.index("case_37") if "case_37" in case_ids else 0,
     )
 with col_sel2:
     st.write("")
