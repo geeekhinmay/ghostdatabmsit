@@ -96,3 +96,57 @@ def test_validator_detects_phase_order_error():
     ]
     errors = validate_steps_json(case_id, "INCOMPLETE", bad_steps)
     assert any("Phase ordering violation" in err for err in errors)
+
+
+def test_validator_detects_future_verification_with_evidence_in_incomplete():
+    case_id = "case_inc_bad"
+    bad_steps = [
+        {
+            "step_no": 1,
+            "phase": "FINDING",
+            "system_id": "account_service",
+            "resource_id": "acc_1",
+            "operation": "REPORT_REMAINING_RECORD",
+            "state": "PRESENT",
+            "evidence_id": "evidence_54",
+        },
+        {
+            "step_no": 2,
+            "phase": "REMEDIATION",
+            "system_id": "account_service",
+            "resource_id": "acc_1",
+            "operation": "DELETE_DATABASE_RECORD",
+            "state": "ABSENT",
+            "evidence_id": "",
+        },
+        {
+            "step_no": 3,
+            "phase": "VERIFICATION",
+            "system_id": "account_service",
+            "resource_id": "acc_1",
+            "operation": "VERIFY_RECORD_ABSENT",
+            "state": "ABSENT",
+            "evidence_id": "evidence_54",  # Future verification must have empty evidence_id
+        },
+    ]
+    errors = validate_steps_json(case_id, "INCOMPLETE", bad_steps)
+    assert any("Future verification step" in err for err in errors)
+
+
+def test_validator_detects_unknown_evidence_id():
+    case_id = "case_bad_ev"
+    steps = [
+        {
+            "step_no": 1,
+            "phase": "VERIFICATION",
+            "system_id": "account_service",
+            "resource_id": "acc_1",
+            "operation": "VERIFY_RECORD_ABSENT",
+            "state": "ABSENT",
+            "evidence_id": "fabricated_id_999",
+        }
+    ]
+    valid_ids = {"evidence_54", "evidence_94"}
+    errors = validate_steps_json(case_id, "COMPLETE", steps, valid_evidence_ids=valid_ids)
+    assert any("cites invalid or unknown evidence_id" in err for err in errors)
+

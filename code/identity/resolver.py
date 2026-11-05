@@ -12,7 +12,8 @@ Public function: resolve_identity(request, dataset) -> IdentityResolution
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Union
 
 from code.identity.models import IdentityResolution
@@ -35,6 +36,60 @@ def _normalize_email(email: Optional[str]) -> str:
     return str(email).strip().lower()
 
 
+def _parse_timestamp(val: Any) -> Optional[datetime]:
+    """Parse timestamp into datetime, handling ISO-8601 strings and 'Z' suffix safely."""
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        val_str = val.strip()
+        if not val_str:
+            return None
+        try:
+            if val_str.endswith("Z"):
+                val_str = val_str[:-1] + "+00:00"
+            return datetime.fromisoformat(val_str)
+        except Exception:
+            return None
+    return None
+
+
+def _compare_le_cutoff(t: datetime, cutoff: datetime) -> bool:
+    """Compare t <= cutoff handling timezone-aware vs timezone-naive safely."""
+    if t.tzinfo is None and cutoff.tzinfo is not None:
+        t = t.replace(tzinfo=timezone.utc)
+    elif t.tzinfo is not None and cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    return t <= cutoff
+
+
+def _is_le_audit_at(entry: Any, audit_at: Optional[datetime]) -> bool:
+    """
+    Check whether an entry's timestamp is <= audit_at cutoff.
+
+    Ensures that missing/malformed timestamps are handled safely and
+    undated evidence is NOT treated as automatically valid when an audit cutoff is set.
+    """
+    if not audit_at:
+        return True
+
+    # Check potential timestamp fields in order: event_time, updated_at, captured_at, timestamp
+    t_val = _get_field(entry, "event_time")
+    if t_val is None:
+        t_val = _get_field(entry, "updated_at")
+    if t_val is None:
+        t_val = _get_field(entry, "captured_at")
+    if t_val is None:
+        t_val = _get_field(entry, "timestamp")
+
+    t = _parse_timestamp(t_val)
+    if t is None:
+        # Undated or malformed timestamp evidence must not be accepted after cutoff
+        return False
+    return _compare_le_cutoff(t, audit_at)
+
+
 def resolve_identity(
     request: Union[DeletionRequest, Dict[str, Any]],
     dataset: Any,
@@ -55,30 +110,7 @@ def resolve_identity(
 
     # Parse audit cutoff if present
     audit_at_val = _get_field(request, "audit_at")
-    audit_at: Optional[datetime] = None
-    if isinstance(audit_at_val, str):
-        try:
-            audit_at = datetime.fromisoformat(audit_at_val.replace("Z", "+00:00"))
-        except Exception:
-            pass
-    elif isinstance(audit_at_val, datetime):
-        audit_at = audit_at_val
-
-    def _is_le_audit_at(entry: Any) -> bool:
-        if not audit_at:
-            return True
-        t_val = _get_field(entry, "event_time")
-        if not t_val:
-            return True
-        if isinstance(t_val, str):
-            try:
-                t = datetime.fromisoformat(t_val.replace("Z", "+00:00"))
-                return t <= audit_at
-            except Exception:
-                return True
-        elif isinstance(t_val, datetime):
-            return t_val <= audit_at
-        return True
+    audit_at = _parse_timestamp(audit_at_val)
 
     # Fast access collections
     identities_by_email = getattr(dataset, "identities_by_email", {}) or {}
@@ -90,24 +122,34 @@ def resolve_identity(
     matched_user: Optional[UserIdentity] = None
     matched_by = "UNKNOWN"
 
-    # 1. Direct current email lookup
+    # 1. Direct current email lookup (enforcing updated_at <= audit_at)
     if normalized_email:
+        candidate_user: Optional[UserIdentity] = None
         if isinstance(identities_by_email, dict) and normalized_email in identities_by_email:
-            matched_user = identities_by_email[normalized_email]
-            matched_by = "DIRECT_EMAIL"
+            candidate_user = identities_by_email[normalized_email]
         else:
             # Fallback iteration over user_identities
             for u in user_identities:
                 u_email = _normalize_email(_get_field(u, "email"))
                 if u_email == normalized_email:
-                    matched_user = u
-                    matched_by = "DIRECT_EMAIL"
+                    candidate_user = u
                     break
 
-    # 2. Historical audit log lookup fallback
+        if candidate_user:
+            if _is_le_audit_at(candidate_user, audit_at):
+                matched_user = candidate_user
+                matched_by = "DIRECT_EMAIL"
+            else:
+                logger.warning(
+                    "User identity for email %s was updated after audit cutoff (%s); skipping direct lookup",
+                    normalized_email,
+                    audit_at,
+                )
+
+    # 2. Historical audit log lookup fallback (enforcing event_time <= audit_at)
     if not matched_user and normalized_email:
         for audit in user_audit_log:
-            if not _is_le_audit_at(audit):
+            if not _is_le_audit_at(audit, audit_at):
                 continue
             field_name = _get_field(audit, "field_name", "")
             if field_name == "email":
@@ -154,12 +196,14 @@ def resolve_identity(
             details={"lookup_status": "UNRESOLVED", "query_email": raw_email},
         )
 
-    # 4. Extract canonical user details
+    # 4. Extract canonical user details safely respecting audit cutoff
     user_id = str(_get_field(matched_user, "user_id", ""))
-    current_name = _get_field(matched_user, "name")
-    current_email = _get_field(matched_user, "email")
-    current_phone = _get_field(matched_user, "phone")
-    current_email_hash = _get_field(matched_user, "email_hash")
+    user_snapshot_valid = _is_le_audit_at(matched_user, audit_at)
+
+    current_name = _get_field(matched_user, "name") if user_snapshot_valid else None
+    current_email = _get_field(matched_user, "email") if user_snapshot_valid else None
+    current_phone = _get_field(matched_user, "phone") if user_snapshot_valid else None
+    current_email_hash = _get_field(matched_user, "email_hash") if user_snapshot_valid else None
 
     # 5. Build full identity cluster from current snapshot and audit logs
     all_emails_set: Set[str] = set()
@@ -180,15 +224,18 @@ def resolve_identity(
 
     user_audit_entries: List[UserAuditEntry] = []
     account_ids_set: Set[str] = set()
-    if user_id:
-        num_part = user_id.split('_')[1] if '_' in user_id else user_id
+
+    # Do not invent account IDs from user IDs unless the dataset explicitly supports that relationship
+    # Canonical Northstar Shop convention applies strictly to canonical numeric user IDs (user_<digits>)
+    user_id_match = re.match(r"^user_(\d+)$", user_id)
+    if user_id_match:
+        num_part = user_id_match.group(1)
         account_ids_set.add(f"account_{num_part}")
-        if num_part.isdigit():
-            account_ids_set.add(f"account_{int(num_part):03d}")
+        account_ids_set.add(f"account_{int(num_part):03d}")
 
     for audit in user_audit_log:
         if _get_field(audit, "user_id") == user_id:
-            if not _is_le_audit_at(audit):
+            if not _is_le_audit_at(audit, audit_at):
                 continue
             user_audit_entries.append(audit)
             field_name = _get_field(audit, "field_name", "")
@@ -218,66 +265,35 @@ def resolve_identity(
 
     # Sort audit entries chronologically if event_time is available
     def _audit_sort_key(entry: Any) -> datetime:
-        t = _get_field(entry, "event_time")
-        if isinstance(t, str):
-            try:
-                return datetime.fromisoformat(t.replace("Z", "+00:00"))
-            except Exception:
-                return datetime.min
-        elif isinstance(t, datetime):
-            return t
-        return datetime.min
+        t = _parse_timestamp(_get_field(entry, "event_time"))
+        if t is not None:
+            return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t
+        return datetime.min.replace(tzinfo=timezone.utc)
 
     user_audit_entries.sort(key=_audit_sort_key)
 
-    # 6. Find correlated system activity events for this user/workflow
-    req_at_val = _get_field(request, "requested_at")
-    rep_at_val = _get_field(request, "reported_at")
-    req_at = None
-    rep_at = None
-    if isinstance(req_at_val, str):
-        try:
-            req_at = datetime.fromisoformat(req_at_val.replace("Z", "+00:00"))
-        except Exception:
-            pass
-    elif isinstance(req_at_val, datetime):
-        req_at = req_at_val
-
-    if isinstance(rep_at_val, str):
-        try:
-            rep_at = datetime.fromisoformat(rep_at_val.replace("Z", "+00:00"))
-        except Exception:
-            pass
-    elif isinstance(rep_at_val, datetime):
-        rep_at = rep_at_val
+    # 6. Find correlated system activity events for this user/workflow strictly up to audit_at
+    req_at = _parse_timestamp(_get_field(request, "requested_at"))
+    rep_at = _parse_timestamp(_get_field(request, "reported_at"))
 
     associated_activities: List[SystemActivity] = []
     for act in system_activity:
-        if not _is_le_audit_at(act):
+        if not _is_le_audit_at(act, audit_at):
             continue
         act_details = str(_get_field(act, "details", ""))
         act_res = str(_get_field(act, "resource_id", ""))
-        # Check direct user reference in details
-        if user_id in act_details or any(e in act_details for e in all_emails_set):
+        # Check direct user reference in details or matching emails
+        if (user_id and user_id in act_details) or any(e in act_details.lower() for e in all_emails_set):
             associated_activities.append(act)
             if act_res.startswith("account_"):
                 account_ids_set.add(act_res)
         elif req_at and rep_at:
-            act_t_val = _get_field(act, "event_time")
-            act_t = None
-            if isinstance(act_t_val, str):
-                try:
-                    act_t = datetime.fromisoformat(act_t_val.replace("Z", "+00:00"))
-                except Exception:
-                    pass
-            elif isinstance(act_t_val, datetime):
-                act_t = act_t_val
-
-            if act_t and req_at <= act_t <= rep_at:
+            act_t = _parse_timestamp(_get_field(act, "event_time"))
+            if act_t and _compare_le_cutoff(req_at, act_t) and _compare_le_cutoff(act_t, rep_at):
                 src = _get_field(act, "source_system", "")
-                if src == "deletion_worker":
-                    # Check if resource matches user's convention
-                    if act_res == f"account_{user_id.split('_')[1]}" or act_res == f"account_{int(user_id.split('_')[1]):03d}":
+                if src == "deletion_worker" and user_id_match:
+                    num_part = user_id_match.group(1)
+                    if act_res == f"account_{num_part}" or act_res == f"account_{int(num_part):03d}":
                         associated_activities.append(act)
                         account_ids_set.add(act_res)
 
@@ -309,4 +325,3 @@ def resolve_identity(
             "historical_hash_count": len(all_hashes_set),
         },
     )
-

@@ -523,7 +523,13 @@ class Orchestrator:
         write_output(results, out_path)
 
         if validate:
-            is_valid = validate_output(out_path, expected_rows=len(results))
+            manifest_ids = set(dataset.manifest_by_file_id.keys()) if hasattr(dataset, "manifest_by_file_id") and dataset.manifest_by_file_id else None
+            is_valid = validate_output(
+                out_path,
+                expected_rows=len(results),
+                dataset_dir=ds_dir,
+                valid_evidence_ids=manifest_ids,
+            )
             if not is_valid:
                 raise ValueError(f"Generated output failed validation: {out_path}")
             logger.info("Output validation PASSED.")

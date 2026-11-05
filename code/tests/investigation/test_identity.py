@@ -599,4 +599,102 @@ class TestIdentityAuditCutoffAndAccounts:
         assert "account_52" in result.account_ids
         assert "account_9988" in result.account_ids
 
+    def test_direct_email_lookup_ignores_future_updated_at(self):
+        """Direct current email lookup must reject user records modified after audit_at."""
+        user = _make_user(
+            "user_60", "future_user@example.com", updated_at="2026-09-15T00:00:00Z"
+        )
+        dataset = _make_dataset(identities=[user])
+        req = _make_request(
+            email="future_user@example.com",
+            audit_at="2026-09-01T00:00:00Z",
+        )
+        result = resolve_identity(req, dataset)
+        assert result.is_identified is False
+        assert result.matched_by == "UNKNOWN"
+
+    def test_historical_match_ignores_future_snapshot_fields(self):
+        """When matched via historical audit log, future profile snapshot fields must not be used."""
+        user = _make_user(
+            "user_61", "future_email_snapshot@example.com", name="Future Name",
+            updated_at="2026-09-15T00:00:00Z"
+        )
+        audit_past = _make_audit(
+            "aud_past", "user_61", "email", "historical_email@example.com", "interim_email@example.com",
+            event_time="2026-08-15T00:00:00Z"
+        )
+        dataset = _make_dataset(identities=[user], audit_log=[audit_past])
+        req = _make_request(
+            email="historical_email@example.com",
+            audit_at="2026-09-01T00:00:00Z",
+        )
+        result = resolve_identity(req, dataset)
+        assert result.is_identified is True
+        assert result.matched_by == "HISTORICAL_EMAIL"
+        assert result.current_name is None
+        assert result.current_email is None
+        assert "future_email_snapshot@example.com" not in result.all_emails
+        assert "historical_email@example.com" in result.all_emails
+        assert "interim_email@example.com" in result.all_emails
+
+    def test_undated_and_malformed_timestamps_rejected(self):
+        """Undated or malformed timestamp evidence must never be treated as valid when audit_at is set."""
+        from code.models.schemas import UserAuditEntry
+        user = _make_user("user_62", "test_undated@example.com")
+        malformed_audit = UserAuditEntry(
+            audit_id="aud_bad",
+            user_id="user_62",
+            event_time="malformed-not-a-date",
+            field_name="email",
+            old_value="old_bad@example.com",
+            new_value="test_undated@example.com",
+        )
+        dataset = _make_dataset(identities=[user], audit_log=[malformed_audit])
+        req = _make_request(
+            email="test_undated@example.com",
+            audit_at="2026-09-01T00:00:00Z",
+        )
+        result = resolve_identity(req, dataset)
+        assert len(result.audit_entries) == 0
+        assert "old_bad@example.com" not in result.all_emails
+
+    def test_timezone_naive_and_aware_comparison_safely_handled(self):
+        """Resolver must safely handle comparison between timezone-naive and timezone-aware timestamps."""
+        user = _make_user("user_63", "tz_test@example.com", updated_at="2026-08-01T00:00:00Z")
+        audit_naive = _make_audit(
+            "aud_naive", "user_63", "email", "tz_old@example.com", "tz_test@example.com",
+            event_time="2026-08-10T12:00:00"  # naive string without Z or offset
+        )
+        dataset = _make_dataset(identities=[user], audit_log=[audit_naive])
+        req = _make_request(
+            email="tz_test@example.com",
+            audit_at="2026-09-01T00:00:00Z",  # aware string with Z
+        )
+        result = resolve_identity(req, dataset)
+        assert result.is_identified is True
+        assert len(result.audit_entries) == 1
+        assert "tz_old@example.com" in result.all_emails
+
+    def test_non_canonical_user_id_does_not_invent_account_id(self):
+        """Resolver must not invent account IDs from non-canonical user IDs."""
+        user = _make_user("guest_external", "guest@example.com")
+        dataset = _make_dataset(identities=[user])
+        req = _make_request(
+            email="guest@example.com",
+            audit_at="2026-09-01T00:00:00Z",
+        )
+        result = resolve_identity(req, dataset)
+        assert result.is_identified is True
+        assert "account_guest" not in result.account_ids
+        assert "account_external" not in result.account_ids
+        assert len(result.account_ids) == 0
+
+    def test_identity_resolution_isinstance_contract(self):
+        """Returned IdentityResolution must be an instance of the authoritative code.models.schemas.IdentityResolution."""
+        from code.models.schemas import IdentityResolution as SchemaIdentityResolution
+        user = _make_user("user_65", "contract@example.com")
+        dataset = _make_dataset(identities=[user])
+        req = _make_request(email="contract@example.com")
+        result = resolve_identity(req, dataset)
+        assert isinstance(result, SchemaIdentityResolution)
 

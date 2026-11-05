@@ -7,16 +7,23 @@ Module: code/identity/models.py
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Set, Union
+from pydantic import Field
 
-from code.models.schemas import SystemActivity, UserAuditEntry
+from code.models.schemas import (
+    IdentityResolution as SchemaIdentityResolution,
+    SystemActivity,
+    UserAuditEntry,
+)
 
 
-class IdentityResolution(BaseModel):
+class IdentityResolution(SchemaIdentityResolution):
     """
     Result of resolving a deletion request's subject against the customer
     identities dataset and historical audit logs.
+
+    Subclasses authoritative code.models.schemas.IdentityResolution while preserving
+    Member 3 fields and full backwards compatibility.
 
     Consumed by:
     - Member 3: investigate_case
@@ -45,19 +52,19 @@ class IdentityResolution(BaseModel):
         default=None,
         description="Current SHA-256 email hash from user_identities.csv",
     )
-    all_emails: List[str] = Field(
+    all_emails: Any = Field(
         default_factory=list,
         description="Comprehensive list of current and historical email addresses",
     )
-    all_phones: List[str] = Field(
+    all_phones: Any = Field(
         default_factory=list,
         description="Comprehensive list of current and historical phone numbers",
     )
-    all_email_hashes: List[str] = Field(
+    all_email_hashes: Any = Field(
         default_factory=list,
         description="Comprehensive list of current and historical email hashes",
     )
-    all_names: List[str] = Field(
+    all_names: Any = Field(
         default_factory=list,
         description="Comprehensive list of known full names",
     )
@@ -108,4 +115,4 @@ class IdentityResolution(BaseModel):
         description="Alias for is_identified for schemas.py compatibility",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {"arbitrary_types_allowed": True, "extra": "ignore"}

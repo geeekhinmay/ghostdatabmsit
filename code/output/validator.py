@@ -9,9 +9,10 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence, Set
 
 from code.models.enums import (
     ALLOWED_OPERATION_STATES,
@@ -33,9 +34,22 @@ def case_sort_key(case_id: str) -> tuple[str, int, str]:
     return (prefix, num, case_id)
 
 
-def validate_steps_json(case_id: str, deletion_status: str, steps_data: list[dict[str, Any]]) -> list[str]:
-    """Validate steps JSON data against official rules. Returns list of error messages."""
+def validate_steps_json(
+    case_id: str,
+    deletion_status: str,
+    steps_data: list[dict[str, Any]],
+    valid_evidence_ids: Set[str] | Sequence[str] | None = None,
+) -> list[str]:
+    """Validate steps JSON data against official rules. Returns list of error messages.
+
+    Args:
+        case_id: Case identifier.
+        deletion_status: String deletion status (COMPLETE, INCOMPLETE, NOT_APPLICABLE).
+        steps_data: Parsed list of step dictionaries from steps_json.
+        valid_evidence_ids: Optional set of known participant-visible evidence IDs.
+    """
     errors: list[str] = []
+    valid_ids_set = set(valid_evidence_ids) if valid_evidence_ids is not None else None
 
     if deletion_status == DeletionStatus.NOT_APPLICABLE.value:
         if steps_data:
@@ -88,9 +102,26 @@ def validate_steps_json(case_id: str, deletion_status: str, steps_data: list[dic
                 f"{case_id}: State '{state_str}' does not match operation '{op_str}' in step {step_no}; expected '{expected_state.value}'"
             )
 
-        # 5. Remediation evidence_id must be empty
+        # 5. Evidence citation rules
         if phase == Phase.REMEDIATION and evidence_id != "":
             errors.append(f"{case_id}: Remediation step {step_no} must have empty evidence_id, got '{evidence_id}'")
+
+        if deletion_status == DeletionStatus.INCOMPLETE.value and phase == Phase.VERIFICATION and evidence_id != "":
+            errors.append(
+                f"{case_id}: Future verification step {step_no} in INCOMPLETE case must have empty evidence_id, got '{evidence_id}'"
+            )
+
+        if phase == Phase.FINDING and not evidence_id:
+            errors.append(f"{case_id}: Finding step {step_no} must cite evidence_id, got empty")
+
+        if evidence_id:
+            if valid_ids_set is not None:
+                if evidence_id not in valid_ids_set:
+                    errors.append(
+                        f"{case_id}: Step {step_no} cites invalid or unknown evidence_id '{evidence_id}' (not in participant manifest)"
+                    )
+            elif not re.match(r"^evidence_\d+$", evidence_id):
+                errors.append(f"{case_id}: Step {step_no} cites malformed evidence_id format '{evidence_id}'")
 
         # 6. Sorting rules:
         # Phase order: FINDING (1) -> REMEDIATION (2) -> VERIFICATION (3)
@@ -124,12 +155,45 @@ def validate_steps_json(case_id: str, deletion_status: str, steps_data: list[dic
     return errors
 
 
-def validate_output(output_path: str | Path, expected_rows: int | None = None) -> bool:
+def _discover_valid_evidence_ids(dataset_dir: str | Path | None = None) -> Set[str] | None:
+    """Helper to discover all valid participant-visible evidence IDs from evidence_files.csv."""
+    candidates = []
+    if dataset_dir:
+        candidates.append(Path(dataset_dir))
+    env_dir = os.environ.get("DATASET_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir))
+    candidates.extend([
+        Path("dataset"),
+        Path("../official_repo/dataset"),
+        Path("official_repo/dataset"),
+    ])
+
+    for cand in candidates:
+        manifest_file = cand / "evidence_files.csv"
+        if manifest_file.is_file():
+            try:
+                with open(manifest_file, mode="r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    return {row["file_id"].strip() for row in reader if "file_id" in row and row["file_id"].strip()}
+            except Exception:
+                pass
+    return None
+
+
+def validate_output(
+    output_path: str | Path,
+    expected_rows: int | None = None,
+    dataset_dir: str | Path | None = None,
+    valid_evidence_ids: Set[str] | Sequence[str] | None = None,
+) -> bool:
     """Validate output CSV against official challenge requirements.
 
     Args:
         output_path: Path to the output.csv file.
         expected_rows: Expected number of data rows (e.g. 518 or 32). If None, check skipped.
+        dataset_dir: Optional path to dataset directory to discover valid evidence IDs.
+        valid_evidence_ids: Optional pre-loaded set of valid participant-visible evidence IDs.
 
     Returns:
         True if the file satisfies all checks, False otherwise.
@@ -138,6 +202,9 @@ def validate_output(output_path: str | Path, expected_rows: int | None = None) -
     if not path.is_file():
         logger.error(f"Output file does not exist: {path}")
         return False
+
+    if valid_evidence_ids is None:
+        valid_evidence_ids = _discover_valid_evidence_ids(dataset_dir)
 
     all_errors: list[str] = []
 
@@ -195,8 +262,8 @@ def validate_output(output_path: str | Path, expected_rows: int | None = None) -
             all_errors.append(f"Row {row_idx} ({case_id}): steps_json must be a JSON array, got {type(steps_data).__name__}")
             continue
 
-        # Validate step rules
-        step_errors = validate_steps_json(case_id, status_val, steps_data)
+        # Validate step rules with evidence citation check
+        step_errors = validate_steps_json(case_id, status_val, steps_data, valid_evidence_ids=valid_evidence_ids)
         all_errors.extend(step_errors)
 
     if all_errors:

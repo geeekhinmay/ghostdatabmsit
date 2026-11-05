@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 from code.models.enums import StepState
-from code.models.schemas import InvestigationFinding
+from code.models.schemas import (
+    InvestigationFinding,
+    InvestigationResult as SchemaInvestigationResult,
+)
 
 
 class InvestigatedResource(BaseModel):
@@ -115,10 +118,13 @@ class InvestigatedRestoreRisk(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-class InvestigationResult(BaseModel):
+class InvestigationResult(SchemaInvestigationResult):
     """
     Complete result of investigating a deletion request across all evidence files
     captured up to audit_at.
+
+    Subclasses authoritative code.models.schemas.InvestigationResult while preserving
+    Member 3 fields and full backwards compatibility.
 
     Consumed by:
     - Member 4: evaluate_policy, build_remediation_plan, build_verification_steps
@@ -172,5 +178,4 @@ class InvestigationResult(BaseModel):
         description="Active data flows dictionary list for schemas.py compatibility",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
-
+    model_config = {"arbitrary_types_allowed": True, "extra": "ignore"}
