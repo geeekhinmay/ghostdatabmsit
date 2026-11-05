@@ -521,3 +521,82 @@ class TestReturnContract:
         assert "lookup_status" in result.details
         assert result.details["lookup_status"] == "UNRESOLVED"
 
+
+# ---------------------------------------------------------------------------
+# 6. Audit Cutoff and Account ID Handling (Point 1 & Point 2 Verification)
+# ---------------------------------------------------------------------------
+
+class TestIdentityAuditCutoffAndAccounts:
+    """Verifies that identity relationships respect audit_at cutoff and account IDs."""
+
+    def test_audit_entries_after_audit_at_are_excluded(self):
+        """Audit entries with event_time > audit_at must be excluded from the cluster."""
+        user = _make_user("user_50", "current@example.com", phone="+1-555-0001")
+        audit_past = _make_audit(
+            "aud_p", "user_50", "phone", "+1-555-0000", "+1-555-0001",
+            event_time="2026-08-01T00:00:00Z"
+        )
+        audit_future = _make_audit(
+            "aud_f", "user_50", "phone", "+1-555-0001", "+1-555-9999",
+            event_time="2026-10-01T00:00:00Z"
+        )
+        dataset = _make_dataset(identities=[user], audit_log=[audit_past, audit_future])
+        req = _make_request(
+            email="current@example.com",
+            audit_at="2026-09-01T00:00:00Z"
+        )
+
+        result = resolve_identity(req, dataset)
+
+        assert result.is_identified is True
+        assert "+1-555-9999" not in result.all_phones
+        assert "+1-555-0000" in result.all_phones
+        assert len(result.audit_entries) == 1
+        assert result.audit_entries[0].audit_id == "aud_p"
+
+    def test_historical_email_fallback_respects_audit_at(self):
+        """Fallback lookup must ignore email changes that occurred after audit_at."""
+        user = _make_user("user_51", "new@example.com")
+        audit_future = _make_audit(
+            "aud_fut", "user_51", "email", "future_old@example.com", "new@example.com",
+            event_time="2026-10-01T00:00:00Z"
+        )
+        dataset = _make_dataset(identities=[user], audit_log=[audit_future])
+        req = _make_request(
+            email="future_old@example.com",
+            audit_at="2026-09-01T00:00:00Z"
+        )
+
+        result = resolve_identity(req, dataset)
+
+        # At audit_at (2026-09-01), the email change hadn't happened yet
+        assert result.is_identified is False
+        assert result.matched_by == "UNKNOWN"
+
+    def test_account_ids_populated_from_convention_and_activities(self):
+        """Account IDs must be populated from user ID and linked system activities."""
+        from code.models.schemas import SystemActivity
+        user = _make_user("user_52", "account_test@example.com")
+        act = SystemActivity(
+            activity_id="act_01",
+            event_time=_dt("2026-08-15T00:00:00Z"),
+            event_type="LINK_RESOURCE_IDENTITY",
+            source_system="data_catalog",
+            target_system="account_service",
+            resource_id="account_9988",
+            reported_result="SUCCESS",
+            details="Linked account_9988 to user_52 and account_test@example.com",
+        )
+        dataset = _make_dataset(identities=[user], system_activity=[act])
+        req = _make_request(
+            email="account_test@example.com",
+            audit_at="2026-09-01T00:00:00Z"
+        )
+
+        result = resolve_identity(req, dataset)
+
+        assert result.is_identified is True
+        assert "account_52" in result.account_ids
+        assert "account_9988" in result.account_ids
+
+

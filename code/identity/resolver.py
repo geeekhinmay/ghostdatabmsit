@@ -53,6 +53,33 @@ def resolve_identity(
     raw_email = _get_field(request, "email", "")
     normalized_email = _normalize_email(raw_email)
 
+    # Parse audit cutoff if present
+    audit_at_val = _get_field(request, "audit_at")
+    audit_at: Optional[datetime] = None
+    if isinstance(audit_at_val, str):
+        try:
+            audit_at = datetime.fromisoformat(audit_at_val.replace("Z", "+00:00"))
+        except Exception:
+            pass
+    elif isinstance(audit_at_val, datetime):
+        audit_at = audit_at_val
+
+    def _is_le_audit_at(entry: Any) -> bool:
+        if not audit_at:
+            return True
+        t_val = _get_field(entry, "event_time")
+        if not t_val:
+            return True
+        if isinstance(t_val, str):
+            try:
+                t = datetime.fromisoformat(t_val.replace("Z", "+00:00"))
+                return t <= audit_at
+            except Exception:
+                return True
+        elif isinstance(t_val, datetime):
+            return t_val <= audit_at
+        return True
+
     # Fast access collections
     identities_by_email = getattr(dataset, "identities_by_email", {}) or {}
     identities_by_user_id = getattr(dataset, "identities_by_user_id", {}) or {}
@@ -80,6 +107,8 @@ def resolve_identity(
     # 2. Historical audit log lookup fallback
     if not matched_user and normalized_email:
         for audit in user_audit_log:
+            if not _is_le_audit_at(audit):
+                continue
             field_name = _get_field(audit, "field_name", "")
             if field_name == "email":
                 old_val = _normalize_email(_get_field(audit, "old_value"))
@@ -150,8 +179,17 @@ def resolve_identity(
         all_names_set.add(str(current_name).strip())
 
     user_audit_entries: List[UserAuditEntry] = []
+    account_ids_set: Set[str] = set()
+    if user_id:
+        num_part = user_id.split('_')[1] if '_' in user_id else user_id
+        account_ids_set.add(f"account_{num_part}")
+        if num_part.isdigit():
+            account_ids_set.add(f"account_{int(num_part):03d}")
+
     for audit in user_audit_log:
         if _get_field(audit, "user_id") == user_id:
+            if not _is_le_audit_at(audit):
+                continue
             user_audit_entries.append(audit)
             field_name = _get_field(audit, "field_name", "")
             old_val = _get_field(audit, "old_value", "")
@@ -172,6 +210,11 @@ def resolve_identity(
                     all_hashes_set.add(str(old_val).strip())
                 if new_val:
                     all_hashes_set.add(str(new_val).strip())
+            elif field_name in ["account_id", "account"]:
+                if old_val:
+                    account_ids_set.add(str(old_val).strip())
+                if new_val:
+                    account_ids_set.add(str(new_val).strip())
 
     # Sort audit entries chronologically if event_time is available
     def _audit_sort_key(entry: Any) -> datetime:
@@ -210,11 +253,15 @@ def resolve_identity(
 
     associated_activities: List[SystemActivity] = []
     for act in system_activity:
+        if not _is_le_audit_at(act):
+            continue
         act_details = str(_get_field(act, "details", ""))
         act_res = str(_get_field(act, "resource_id", ""))
         # Check direct user reference in details
         if user_id in act_details or any(e in act_details for e in all_emails_set):
             associated_activities.append(act)
+            if act_res.startswith("account_"):
+                account_ids_set.add(act_res)
         elif req_at and rep_at:
             act_t_val = _get_field(act, "event_time")
             act_t = None
@@ -232,6 +279,7 @@ def resolve_identity(
                     # Check if resource matches user's convention
                     if act_res == f"account_{user_id.split('_')[1]}" or act_res == f"account_{int(user_id.split('_')[1]):03d}":
                         associated_activities.append(act)
+                        account_ids_set.add(act_res)
 
     return IdentityResolution(
         case_id=case_id,
@@ -248,7 +296,7 @@ def resolve_identity(
         phones=sorted(all_phones_set),
         email_hashes=sorted(all_hashes_set),
         names=sorted(all_names_set),
-        account_ids=[],
+        account_ids=sorted(account_ids_set),
         is_identified=True,
         is_resolved=True,
         matched_by=matched_by,
