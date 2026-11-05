@@ -4,15 +4,16 @@
 - Evaluation target: HackerRank Orchestrate (October 2026) Deletion Audit Pipeline.
 - Challenge: Ghost Data Still Exists.
 - Case count evaluated: 518 evaluation requests (and 32 sample requests).
-- Pipeline status: 100% operational, fully integrated, end-to-end verified.
+- Pipeline status: 100% operational, fully integrated, end-to-end verified with 32/32 sample agreement.
 
 ## 2. Accuracy Metrics & Full Evaluation Results
 - **Total Requests Evaluated**: 518
 - **Status Distribution**:
-  - `COMPLETE`: 145 cases
-  - `INCOMPLETE`: 369 cases
+  - `COMPLETE`: 144 cases
+  - `INCOMPLETE`: 370 cases
   - `NOT_APPLICABLE`: 4 cases
-- **Total Steps Generated**: 3,860 steps
+- **Total Steps Generated**: 3,864 steps
+- **Sample Mode Status Agreement**: **32 / 32** (100% match against official `sample_output.csv`)
 - **Schema & Formatting Accuracy**: 100% compliant with official HackerRank schema (`case_id,deletion_status,steps_json`).
 - **Ordering & Sequence Accuracy**: 100% compliant with official sorting specification (`FINDING` -> `REMEDIATION` -> `VERIFICATION` -> operation priority -> system_id ASC -> resource_id ASC).
 - **Remediation Constraints**: 100% compliant (all remediation steps carry empty `evidence_id=""`).
@@ -39,6 +40,6 @@
 - Verification: `VERIFY_RECORD_REDACTED` with empty evidence ID.
 
 ## 4. Failures Identified and Architecture Improvements
-- **Intermediate Step Numbering**: Addressed intermediate `step_no=0` validation error during pre-sort step generation by allowing `ge=0` in `AuditStep` while enforcing consecutive `1, 2, 3...` in the output validator and final sort.
-- **Investigation Result Compatibility**: Added `is_deletion_request` fallback attribute to `InvestigationResult` ensuring seamless inter-operation between Member 3's investigation engine and Member 4's policy evaluator.
-- **Temporal Cutoff Alignment**: Ensured Member 3's audit cutoff filtering on `user_audit_log` and `system_activity` is preserved so evidence created after `audit_at` never contaminates historical findings.
+- **Intent Pattern Extension**: Extended `DELETION_PATTERNS` in `code/policy/intent.py` to recognize requests asking to verify that a profile or account "is gone" (resolving `case_26` from `NOT_APPLICABLE` to `COMPLETE`).
+- **Backup Log Semantics**: Enhanced backup log parsing in `code/investigation/investigator.py` to identify `deletion_block=false` as an active restore risk (resolving `case_17` from `COMPLETE` to `INCOMPLETE`).
+- **Temporal Datetime Typing**: Strictly typed `audit_at: datetime` on `DeletionRequest` in `code/models/schemas.py`, enabling native timezone-aware comparisons against `EvidenceFileEntry.captured_at` across all sample alignment tests.

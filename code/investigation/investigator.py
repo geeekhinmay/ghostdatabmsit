@@ -390,7 +390,7 @@ def investigate_case(
                     ))
                 elif res_id.startswith("backup_"):
                     seen_res.add(res_id)
-                    can_res = ("restore_allowed=true" in line or "ACTIVE" in line or '"restore_allowed":true' in line or '"restore_allowed": true' in line)
+                    can_res = ("restore_allowed=true" in line or "ACTIVE" in line or '"restore_allowed":true' in line or '"restore_allowed": true' in line or "deletion_block=false" in line or '"deletion_block":"false"' in line or ("eligible=true" in line and "deletion_block=true" not in line) or ('"eligible":"true"' in line and '"deletion_block":"true"' not in line))
                     restore_risks.append(InvestigatedRestoreRisk(
                         system_id="backup_service", resource_id=res_id,
                         can_restore=can_res, is_blocked=not can_res,

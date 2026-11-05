@@ -36,6 +36,7 @@ DELETION_PATTERNS = [
     r"\bwip(?:e|ing|ed)?\b",
     r"\bclean\s+(?:out\s+)?my\s+personal\s+details\b",
     r"\bwithout\s+a\s+trace\b",
+    r"\b(?:profile|account)\s+is\s+gone\b",
     # Spanish (elimin*, borr*, cerr* cuenta, suprim*)
     r"\belimin(?:ar|acion|ado|o|e|en|es)?\b",
     r"\bborr(?:ar|ado|o|e|en|es)?\b",

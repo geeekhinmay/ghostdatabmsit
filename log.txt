@@ -389,3 +389,44 @@ branch=integrate/final-assembly
 repo_root=C:\Users\admin\.gemini\antigravity\scratch\nasdhjksah101001
 worktree=main
 parent_agent=none
+
+
+## 2026-11-05T06:20:00+05:30 Final Pre-Merge Targeted Validation and Defect Resolution
+
+User Prompt (verbatim, secrets redacted):
+# FINAL PRE-MERGE VALIDATION — TARGETED ONLY
+
+The integration branch has been successfully assembled and pushed.
+
+Current branch:
+`integrate/final-assembly`
+
+Current commit:
+`df054affaa6d2d0bc0cf9b135aa9f2b81e05e324`
+
+The previous report shows:
+- 181 tests passed.
+- 8 sample-alignment tests skipped.
+- 518 evaluation cases processed.
+- 30/32 sample statuses match the organiser's sample output.
+
+Before merging into develop, perform the following targeted checks.
+
+Agent Response Summary:
+Investigated the two sample mismatches (case_17 and case_26) and the 8 skipped sample-alignment tests. Enabled all sample-alignment tests by providing configured DATASET_DIR, fixed a TypeError in datetime comparison by typing DeletionRequest.audit_at as datetime, resolved genuine defects in backup log restore risk parsing (deletion_block=false) and profile-gone deletion intent classification, added 2 focused regression tests (191 total tests passing, 0 skipped, 0 failed), achieved 32/32 (100%) sample status agreement against official sample_output.csv, and re-validated root output.csv for all 518 evaluation cases.
+
+Actions:
+* Configured DATASET_DIR and typed DeletionRequest.audit_at as datetime (8/8 sample-alignment tests passing)
+* Fixed active restore risk detection for deletion_block=false in code/investigation/investigator.py (resolving case_17)
+* Extended deletion intent pattern in code/policy/intent.py for profile-gone inquiries (resolving case_26)
+* Added regression tests in code/tests/investigation/test_investigator.py and code/tests/policy/test_intent.py
+* Executed full test suite: 191 passed in 2.69s (0 failures, 0 skipped)
+* Re-generated and validated root output.csv (518 rows, 3,864 steps) with 100% schema compliance
+
+Context:
+tool=Antigravity
+model=Gemini 3.8 Flash (High)
+branch=integrate/final-assembly
+repo_root=C:\Users\admin\.gemini\antigravity\scratch\nasdhjksah101001
+worktree=main
+parent_agent=none

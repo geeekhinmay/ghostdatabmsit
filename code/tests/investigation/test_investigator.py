@@ -449,3 +449,49 @@ class TestVerificationEvidenceRules:
         # Because search_01 is PRESENT => has_violations is True => primary account evidence_id cleared
         assert result.primary_account.state == StepState.ABSENT
         assert result.primary_account.evidence_id == ""
+
+
+    def test_backup_restore_candidate_unblocked_detection(self, tmp_path):
+        """Verify that backup log lines indicating eligible=true deletion_block=false are identified as active restore risks."""
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        from code.models.enums import StepState, ReportedStatus
+        from code.models.schemas import DeletionRequest, IdentityResolution
+        from code.investigation.investigator import investigate_case, _INDEXER_CACHE
+
+        req = DeletionRequest(
+            case_id="case_t1",
+            email="test@example.com",
+            requested_at=datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc),
+            reported_status=ReportedStatus.NOT_STARTED,
+            reported_at=datetime(2026, 9, 2, 10, 0, tzinfo=timezone.utc),
+            audit_at=datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc),
+            request_text="Delete my data completely.",
+        )
+        ident = IdentityResolution(
+            case_id="case_t1",
+            user_id="user_t1",
+            all_emails={"test@example.com"},
+            is_resolved=True,
+        )
+        # Create manifest
+        manifest_content = "file_id,file_path,origin,captured_at\nevidence_t1,evidence_t1.log,backup_service,2026-09-10T10:00:00Z\n"
+        (tmp_path / "evidence_files.csv").write_text(manifest_content, encoding="utf-8")
+        # Log with eligible=true deletion_block=false
+        log_content = (
+            "2026-09-10T09:00:00Z level=ERROR service=backup_service resource_id=backup_9999 "
+            "event=restore_candidate_evaluated eligible=true deletion_block=false subject_key=\"test@example.com\"\n"
+        )
+        (tmp_path / "evidence_t1.log").write_text(log_content, encoding="utf-8")
+
+        key = str(tmp_path.resolve())
+        _INDEXER_CACHE.pop(key, None)
+
+        with patch("code.investigation.investigator._find_dataset_dir", return_value=tmp_path):
+            result = investigate_case(req, ident, [])
+
+        b99 = [rr for rr in result.restore_risks if rr.resource_id == "backup_9999"]
+        assert len(b99) == 1
+        assert b99[0].can_restore is True
+        assert b99[0].is_blocked is False
+        assert b99[0].state == StepState.ACTIVE

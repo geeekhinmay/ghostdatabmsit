@@ -40,10 +40,10 @@ class DeletionRequest(BaseModel):
 
     case_id: str
     email: str
-    requested_at: datetime | str
+    requested_at: datetime
     reported_status: ReportedStatus
-    reported_at: datetime | str
-    audit_at: datetime | str
+    reported_at: datetime
+    audit_at: datetime
     request_text: str
 
 
