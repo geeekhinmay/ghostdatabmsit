@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 from frontend.services.backend_adapter import backend_adapter
+from frontend.services.terminal_logger import log_to_terminal
 
 st.set_page_config(page_title="Compliance Reports | NORTHSTAR", page_icon="📋", layout="wide")
 
@@ -59,8 +60,14 @@ with tab_val:
             )
 
     if validate_now:
+        log_to_terminal("BUTTON CLICKED: 'Run Full Official Validation Now'", "Validating output.csv against challenge rules...")
         with st.spinner("Validating output.csv against official requirements..."):
             report = backend_adapter.validate_audit_output()
+
+        log_to_terminal(
+            "VALIDATION RESULT",
+            f"  Status: {'PASSED' if report.is_valid else 'FAILED'} | Validated Rows: {report.total_rows}\n  Complete: {report.complete_count}, Incomplete: {report.incomplete_count}, N/A: {report.not_applicable_count}",
+        )
 
         if report.is_valid:
             st.success(f"✅ **VALIDATION PASSED!** (Verified {report.total_rows} case rows in {report.output_path})")

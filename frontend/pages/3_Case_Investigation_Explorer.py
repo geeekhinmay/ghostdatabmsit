@@ -18,6 +18,7 @@ import streamlit as st
 from frontend.components.metrics_cards import render_status_badge
 from frontend.components.timeline import render_step_timeline
 from frontend.services.backend_adapter import backend_adapter
+from frontend.services.terminal_logger import log_to_terminal
 
 st.set_page_config(page_title="Case Explorer | NORTHSTAR", page_icon="🔍", layout="wide")
 
@@ -50,6 +51,13 @@ case = backend_adapter.get_case_details(selected_case_id)
 if not case:
     st.error(f"Could not load details for case {selected_case_id}")
     st.stop()
+
+if "last_logged_case" not in st.session_state or st.session_state.last_logged_case != selected_case_id:
+    st.session_state.last_logged_case = selected_case_id
+    log_to_terminal(
+        f"USER INSPECTING CASE IN UI: {case.case_id}",
+        f"  Customer Email : {case.request_email}\n  Request Text   : \"{case.request_text}\"\n  Resolved ID    : {case.user_id} ({case.user_name})\n  Audit Verdict  : {case.deletion_status} ({len(case.steps)} steps generated)",
+    )
 
 st.markdown("---")
 

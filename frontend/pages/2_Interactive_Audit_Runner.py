@@ -18,6 +18,7 @@ import pandas as pd
 import streamlit as st
 from frontend.components.metrics_cards import render_kpi_row
 from frontend.services.backend_adapter import backend_adapter
+from frontend.services.terminal_logger import log_to_terminal
 
 st.set_page_config(page_title="Audit Runner | NORTHSTAR", page_icon="⚡", layout="wide")
 
@@ -65,6 +66,12 @@ st.markdown("---")
 if run_sample_btn or run_full_btn:
     sample_mode = bool(run_sample_btn)
     mode_name = "Sample (32 Cases)" if sample_mode else "Full (518 Cases)"
+    btn_label = "Execute Sample Audit (32 Cases)" if sample_mode else "Execute Full Audit (518 Cases)"
+    
+    log_to_terminal(
+        f"BUTTON CLICKED: '{btn_label}'",
+        f"  Initiating live audit for {mode_name} across distributed systems...",
+    )
     
     progress_bar = st.progress(0, text=f"Initializing {mode_name} audit...")
     status_text = st.empty()
@@ -84,6 +91,10 @@ if run_sample_btn or run_full_btn:
     status_text.empty()
 
     if result.success:
+        log_to_terminal(
+            f"AUDIT PIPELINE FINISHED: {mode_name}",
+            f"  Duration: {result.duration_seconds}s | Cases: {result.total_cases}\n  Verdicts: {result.status_counts}\n  Total Steps: {result.total_steps}\n  Official Validation: {'PASSED' if result.is_valid else 'FAILED'}",
+        )
         st.success(f"✅ **{mode_name} Audit Completed Successfully in {result.duration_seconds}s!**")
         
         # Display Run Metrics
