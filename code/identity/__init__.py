@@ -1,5 +1,11 @@
-"""Identity resolution package (Owned by Member 3).
-
-Responsible for reconstructing current and historical identifiers across
-user_identities.csv and user_audit_log.csv.
 """
+Identity resolution package.
+
+Owned by: Member 3 (Chirag Gowda)
+"""
+
+from code.identity.models import IdentityResolution
+from code.identity.resolver import resolve_identity
+
+__all__ = ["IdentityResolution", "resolve_identity"]
+
