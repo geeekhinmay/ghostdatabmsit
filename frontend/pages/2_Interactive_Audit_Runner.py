@@ -119,9 +119,10 @@ if run_sample_btn or run_full_btn:
         else:
             st.error("❌ Output validation failed. Check console or report for details.")
 
-        if result.logs:
+        logs_list = getattr(result, "logs", None)
+        if logs_list:
             with st.expander("🖥️ View Live Execution & Pipeline Terminal Logs", expanded=True):
-                st.code("\n".join(result.logs), language="bash")
+                st.code("\n".join(logs_list), language="bash")
         st.write("")
 
     else:
