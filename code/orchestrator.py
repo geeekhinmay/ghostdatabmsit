@@ -17,6 +17,8 @@ from code.models.enums import (
     DeletionStatus,
     Phase,
     ReportedStatus,
+    StepOperation,
+    StepState,
 )
 from code.models.schemas import (
     DatasetBundle,
@@ -387,7 +389,8 @@ class Orchestrator:
         policy = self.evaluate_policy_fn(request, investigation, dataset.rules)
 
         # Check for NOT_APPLICABLE
-        if not investigation.is_deletion_request or policy.deletion_status == DeletionStatus.NOT_APPLICABLE:
+        is_del = getattr(investigation, "is_deletion_request", True) and getattr(policy, "is_deletion_request", True)
+        if not is_del or policy.deletion_status == DeletionStatus.NOT_APPLICABLE:
             return OutputRow(
                 case_id=request.case_id,
                 deletion_status=DeletionStatus.NOT_APPLICABLE,
@@ -408,17 +411,24 @@ class Orchestrator:
             )
 
         # INCOMPLETE cases: include findings, proposed remediation, and future verification
-        # 1. Findings from investigation
-        for f in investigation.findings:
+        # 1. Findings from policy evaluation / investigation
+        findings_to_use = getattr(policy, "findings", None) or getattr(investigation, "findings", [])
+        for f in findings_to_use:
+            op = getattr(f, "operation", None) or StepOperation.REPORT_REMAINING_RECORD
+            st = getattr(f, "state", None) or StepState.PRESENT
+            if isinstance(op, str):
+                op = StepOperation(op)
+            if isinstance(st, str):
+                st = StepState(st)
             raw_steps.append(
                 Step(
                     step_no=1,  # renumbered during sort_and_number_steps
                     phase=Phase.FINDING,
-                    system_id=f.system_id,
-                    resource_id=f.resource_id,
-                    operation=f.operation,
-                    state=f.state,
-                    evidence_id=f.evidence_id,
+                    system_id=getattr(f, "system_id", "") or "",
+                    resource_id=getattr(f, "resource_id", "") or "",
+                    operation=op,
+                    state=st,
+                    evidence_id=getattr(f, "evidence_id", "") or "",
                 )
             )
 
@@ -469,6 +479,8 @@ class Orchestrator:
         """Execute full end-to-end pipeline."""
         ds_dir = Path(dataset_dir) if dataset_dir else self.config.dataset_dir
         out_path = Path(output_path) if output_path else self.config.output_path
+        import os
+        os.environ["DATASET_DIR"] = str(ds_dir)
 
         logger.info(f"Loading dataset from: {ds_dir}")
         dataset = self.load_dataset_fn(ds_dir)
@@ -478,6 +490,7 @@ class Orchestrator:
             from code.ingestion import parse_all_evidence
             logger.info("Parsing evidence via code.ingestion.parse_all_evidence...")
             evidence_records = parse_all_evidence(ds_dir, dataset.evidence_manifest)
+            dataset.evidence_records = evidence_records
             logger.info(f"Parsed {len(evidence_records)} evidence records via Member 2 module.")
         except Exception as e:
             logger.warning(f"parse_all_evidence notification: {e}")

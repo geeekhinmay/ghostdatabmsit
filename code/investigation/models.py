@@ -126,6 +126,10 @@ class InvestigationResult(BaseModel):
     """
 
     case_id: str = Field(description="Case identifier from the deletion request")
+    is_deletion_request: bool = Field(
+        default=True,
+        description="Whether this is an authorized deletion request",
+    )
     user_id: Optional[str] = Field(
         default=None,
         description="Resolved user_id",

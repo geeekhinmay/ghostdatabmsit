@@ -284,7 +284,7 @@ class AuditStep(BaseModel):
     """Single step in the steps_json output array."""
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    step_no: int = Field(..., ge=1, description="1-based consecutive step number")
+    step_no: int = Field(default=1, ge=0, description="1-based consecutive step number (0 allowed prior to numbering)")
     phase: StepPhase = Field(..., description="Workflow phase: FINDING, REMEDIATION, or VERIFICATION")
     system_id: str = Field(..., min_length=1, description="Identifier of the system or service")
     resource_id: str = Field(..., min_length=1, description="Identifier of the specific resource or record")
